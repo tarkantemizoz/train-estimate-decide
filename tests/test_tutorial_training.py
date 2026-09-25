@@ -122,18 +122,35 @@ def test_mpi_shards_use_disjoint_seed_coordinates_and_one_logical_generation(tmp
         aggregate_shards([shards[0], shards[0]], generation=0, world_size=2, total_samples=18)
 
 
+@pytest.fixture(scope="session")
+def bash_executable():
+    candidates = []
+    if sys.platform == "win32" and (git := shutil.which("git")):
+        # Prefer Git Bash to the Windows WSL launcher, which may have no distro.
+        candidates.extend(parent / "bin/bash.exe" for parent in Path(git).resolve().parents[:3])
+    if bash := shutil.which("bash"):
+        candidates.append(Path(bash))
+    for candidate in dict.fromkeys(candidates):
+        if not candidate.is_file():
+            continue
+        try:
+            probe = subprocess.run([str(candidate), "--version"], capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if probe.returncode == 0:
+            return str(candidate)
+    pytest.skip("Slurm script syntax check requires a working Bash installation")
+
+
 @pytest.mark.parametrize("profile", ["genoa", "mpi", "gpu"])
-@pytest.mark.skipif(shutil.which("bash") is None, reason="Slurm script syntax check requires Bash")
-def test_slurm_scripts_parse_and_use_one_rank_per_node(profile, tmp_path):
+def test_slurm_scripts_parse_and_use_one_rank_per_node(profile, bash_executable):
     settings = remote_settings(
         {"workstation": {"target": "snellius", "host": "example@snellius.surf.nl", "profile": profile}}
     )
     script = job_script(
         settings, "lost_sales_stationary", "/home/example/release", "/home/example/venv", "/home/example/job"
     )
-    path = tmp_path / "job.sbatch"
-    path.write_text(script)
-    subprocess.run(["bash", "-n", str(path)], check=True)
+    subprocess.run([bash_executable, "-n"], input=script, text=True, check=True, timeout=10)
     assert "--ntasks-per-node=1" in script
     if profile == "mpi":
         assert "mpirun --map-by ppr:1:node --bind-to none" in script
