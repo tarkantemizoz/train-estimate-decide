@@ -1,0 +1,4 @@
+# Tested tutorial runtime. Choose a PyTorch CPU/CUDA wheel first when needed.
+dynaplex==1.14.0
+numpy==2.5.3
+torch==2.14.0

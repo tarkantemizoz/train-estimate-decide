@@ -1,0 +1,47 @@
+{
+  "model": {
+    "max_p": 100.0,
+    "max_demand": 12.0,
+    "max_leadtime": 10
+  },
+  "dcl": {
+    "n": 128,
+    "m": 8,
+    "h": 5,
+    "warmup_time": 5,
+    "restart_after": 8,
+    "reduction_factor": 4,
+    "final_field": 5,
+    "seed": 0
+  },
+  "network": {
+    "hidden": [
+      256,
+      128,
+      128,
+      128
+    ]
+  },
+  "train": {
+    "loss": "ce",
+    "epochs": 2,
+    "batch_size": 32,
+    "lr": 0.001,
+    "patience": 15,
+    "val_fraction": 0.05,
+    "val_every": 1
+  },
+  "execution": {
+    "processes": "auto",
+    "workers": "auto",
+    "slots": 512,
+    "device": "auto",
+    "torch_threads": "auto",
+    "fit_threads": "auto"
+  },
+  "generations": 2,
+  "workstation": {
+    "target": "local"
+  },
+  "output": "runs/tutorial_smoke"
+}

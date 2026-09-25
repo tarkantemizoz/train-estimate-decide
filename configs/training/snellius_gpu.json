@@ -1,0 +1,54 @@
+{
+  "model": {
+    "max_p": 100.0,
+    "max_demand": 12.0,
+    "max_leadtime": 10,
+    "train_stochastic_leadtimes": true,
+    "train_cyclic_demand": true,
+    "max_num_cycles": 7
+  },
+  "dcl": {
+    "n": 1000000,
+    "m": 500,
+    "h": 21,
+    "warmup_time": 100,
+    "restart_after": 100,
+    "reduction_factor": 4,
+    "final_field": 5,
+    "seed": 0
+  },
+  "network": {
+    "hidden": [
+      256,
+      128,
+      128,
+      128
+    ]
+  },
+  "train": {
+    "loss": "ce",
+    "epochs": 100,
+    "batch_size": 1024,
+    "lr": 0.001,
+    "patience": 15,
+    "val_fraction": 0.05,
+    "val_every": 1
+  },
+  "execution": {
+    "processes": "auto",
+    "workers": "auto",
+    "slots": 512,
+    "device": "auto",
+    "torch_threads": "auto",
+    "fit_threads": "auto"
+  },
+  "generations": 5,
+  "workstation": {
+    "target": "snellius",
+    "host": "YOUR_USERNAME@snellius.surf.nl",
+    "profile": "gpu",
+    "remote_root": "ted-tutorial",
+    "time": "12:00:00"
+  },
+  "output": "runs/snellius_gpu"
+}
