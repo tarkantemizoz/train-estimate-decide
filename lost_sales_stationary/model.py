@@ -24,7 +24,6 @@ from dynaplex.modelling import (
     featurizer,
     trajectory_context,
 )
-from numpy.typing import NDArray
 
 
 @dataclass(slots=True)
@@ -40,7 +39,7 @@ class State:
     max_system_inv: int
     max_order_size_limit: int
     order_constraint: int
-    demand_probs: NDArray[np.float64]
+    demand_probs: list[float]
     est_min_demand: int
     category: StateCategory = StateCategory.AWAIT_ACTION
     demand: int = 0
@@ -179,7 +178,7 @@ class StationaryLostSalesMDP:
         queue = FifoQueue()
         queue.reserve(self.pipeline_width + 1)
         queue.fill(self.pipeline_width)
-        probs = np.zeros(estimate.max() - estimate.min() + 1, dtype=np.float64)
+        probs = [0.0] * (estimate.max() - estimate.min() + 1)
         for value in range(estimate.min(), estimate.max() + 1):
             probs[value - estimate.min()] = estimate.probability_at(value)
         state = State(
@@ -203,7 +202,7 @@ class StationaryLostSalesMDP:
         return state
 
     def update_order_limits(self, state: State) -> None:
-        dist = DiscreteDist.custom(state.demand_probs, state.est_min_demand)
+        dist = DiscreteDist.custom(np.array(state.demand_probs), state.est_min_demand)
         total = DiscreteDist.constant(0)
         for _ in range(state.leadtime + 1):
             total = total.add(dist)
@@ -288,7 +287,10 @@ class StationaryLostSalesMDP:
                 probs[i] -= weight
                 for j in range(i + 1, size):
                     probs[j] += state.past_demands[j] * weight / state.cumulative_demands[i]
-        state.demand_probs = probs
+        estimate = [0.0] * size
+        for i in range(size):
+            estimate[i] = probs[i]
+        state.demand_probs = estimate
         state.est_min_demand = 0
         dist = DiscreteDist.custom(probs, 0)
         state.mean_demand = dist.expectation()
