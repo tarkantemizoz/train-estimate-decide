@@ -1,4 +1,3 @@
-import copy
 import json
 import shutil
 import subprocess
@@ -9,10 +8,10 @@ import dynaplex as dp
 import numpy as np
 import pytest
 
-from ted_tutorial.config import read_config, resolve_config
+from ted_tutorial.config import read_config
 from ted_tutorial.distributed import aggregate_shards
 from ted_tutorial.remote import job_script, remote_settings, source_files
-from ted_tutorial.training import model_parts
+from ted_tutorial.training import build_experiment, model_parts, preview
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,7 +23,12 @@ def config():
 @pytest.mark.parametrize("environment", ["lost_sales_stationary", "zero_shot_lost_sales_inventory_control"])
 def test_portable_command_trains_reloads_resumes_and_rejects_changed_run(tmp_path, environment):
     settings = config()
-    settings["execution"].update(processes=2, workers=1, device="cpu", torch_threads=1, fit_threads=1)
+    settings["dcl"].update(
+        machine=None,
+        torch_threads=1,
+        gen0={"processes": 2, "workers": 1, "slots": 32},
+        trained={"processes": 2, "workers": 1, "slots": 32},
+    )
     path = tmp_path / "config.json"
     path.write_text(json.dumps(settings))
     output = tmp_path / "run"
@@ -44,40 +48,101 @@ def test_portable_command_trains_reloads_resumes_and_rejects_changed_run(tmp_pat
     original_timing = (output / "timing.json").read_text()
     second = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=30)
     assert second.returncode == 0, second.stdout + second.stderr
-    assert "agent_gen2 exists; skipping" in second.stdout
+    assert "agent_gen2 exists" in second.stdout
     assert {p.name: p.stat().st_mtime_ns for p in checkpoint.iterdir()} == mtimes
     assert (output / "timing.json").read_text() == original_timing
     settings["dcl"]["m"] += 1
     path.write_text(json.dumps(settings))
     changed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=30)
     assert changed.returncode != 0
-    assert "different run" in changed.stderr
+    assert "different experiment" in changed.stderr
 
 
-@pytest.mark.parametrize(
-    ("cpus", "n", "ranks"), [(1, 100000, 1), (15, 100000, 1), (192, 5000000, 1), (192, 5000000, 2)]
-)
-def test_auto_uses_available_allocation_and_safe_controller_capacity(cpus, n, ranks):
-    settings = config()
-    settings["dcl"].update(n=n, m=500)
-    settings["execution"]["device"] = "cpu"
-    before = copy.deepcopy(settings)
-    resolved = resolve_config(settings, cpus=cpus, world_size=ranks)
-    execution = resolved["execution"]
-    assert execution["processes"] * execution["workers"] == cpus
-    assert execution["fit_threads"] == cpus
-    assert settings == before
-    assert execution["processes"] * resolved["generations"] * ranks <= 4096
+def test_omitted_options_are_native_defaults_through_cli(tmp_path):
+    # This used to fail because the wrapper required n/m/h, network and train.
+    settings = {"dcl": {"machine": None}, "generations": 1}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(settings))
+    output = tmp_path / "must-not-be-created"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "train.py",
+            "lost_sales_stationary",
+            str(path),
+            "--dry-run",
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    actual = json.loads(result.stdout)
+    model, policy, features = model_parts("lost_sales_stationary", {})
+    native = dp.DCL(model, policy, features=features, machine=None, workdir=str(tmp_path / "native"))
+    expected = json.loads((Path(native.workdir) / "dcl.json").read_text())
+    assert actual["dcl"] == expected
+    assert actual["torch_threads"] is None
+    assert not output.exists()
+    assert json.loads(path.read_text()) == settings
 
 
-def test_unavailable_requested_device_fails(monkeypatch):
-    import torch
+def test_native_machine_default_and_partial_shape_override(monkeypatch, tmp_path):
+    import dynaplex.machine as machine
 
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    settings = config()
-    settings["execution"]["device"] = "cuda"
-    with pytest.raises(ValueError, match="unavailable"):
-        resolve_config(settings)
+    # Exercise native auto selection on CI platforms with a deterministic native laptop plan.
+    native_plan = machine.plan("laptop")
+    calls = []
+
+    def recognize(name):
+        calls.append(name)
+        return native_plan
+
+    monkeypatch.setattr(machine, "plan", recognize)
+    settings = {"generations": 1, "dcl": {"gen0": {"workers": 1}}}
+    actual = build_experiment("lost_sales_stationary", settings, tmp_path / "run")
+    assert calls == ["auto"]
+    assert actual.gen0 == dp.Shape(workers=1).resolve(native_plan.gen0)
+    assert actual.trained == native_plan.trained
+    assert actual.device == native_plan.device
+    assert actual.train_device == native_plan.training_device
+    assert actual.torch_threads == native_plan.torch_threads
+    assert settings == {"generations": 1, "dcl": {"gen0": {"workers": 1}}}
+
+
+def test_native_training_defaults_work_without_network_or_train_sections(tmp_path):
+    settings = {"dcl": {"machine": None, "n": 32, "m": 2, "h": 2, "torch_threads": 1}, "generations": 1}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(settings))
+    output = tmp_path / "run"
+    result = subprocess.run(
+        [sys.executable, "train.py", "lost_sales_stationary", str(path), "--output", str(output)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    agent = dp.NNAgent.load(str(output / "agent_gen1"))
+    assert agent.info["generation"] == 1
+    assert len(dp.SampleSet.load(str(output / "samples_gen0"))) == 32
+    record = json.loads((output / "dcl.json").read_text())
+    assert record["train"] == {}
+
+
+def test_native_dcl_option_typo_is_reported():
+    with pytest.raises(TypeError, match="unexpected keyword argument.*workres"):
+        preview("lost_sales_stationary", {"dcl": {"machine": None, "workres": 4}})
+
+
+def test_legacy_execution_block_is_not_silently_ignored(tmp_path):
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps({"execution": {"workers": "auto"}, "generations": 1}))
+    with pytest.raises(ValueError, match="custom execution section was removed"):
+        read_config(path, "lost_sales_stationary")
 
 
 def test_mpi_shards_use_disjoint_seed_coordinates_and_one_logical_generation(tmp_path):
@@ -120,6 +185,39 @@ def test_mpi_shards_use_disjoint_seed_coordinates_and_one_logical_generation(tmp
     assert agent.info["config_hash"] == merged.manifest["config_hash"]
     with pytest.raises(ValueError, match="RNG generation"):
         aggregate_shards([shards[0], shards[0]], generation=0, world_size=2, total_samples=18)
+
+
+def test_mpi_adapter_uses_native_shapes_and_fits_shared_generations(tmp_path):
+    from ted_tutorial.distributed import _run
+
+    class LocalComm:
+        def allgather(self, value):
+            return [value]
+
+        def bcast(self, value, root):
+            return value
+
+        def Barrier(self):
+            pass
+
+    # Run the real collector, aggregator and fitter with a local communicator.
+    # The separate shard test above verifies two-rank seed separation and merging.
+    settings = config()
+    settings["dcl"].update(
+        machine=None,
+        torch_threads=1,
+        gen0={"workers": 1, "slots": 32},
+        trained={"workers": 2, "slots": 32},
+    )
+    output = tmp_path / "mpi"
+    result = _run(LocalComm(), 0, 1, "lost_sales_stationary", settings, output)
+    assert result["checkpoint_saved"]
+    for generation, workers in [(0, 1), (1, 2)]:
+        shard = dp.SampleSet.load(str(output / f"shards_gen{generation}/rank0000"))
+        assert shard.manifest["execution"]["workers"] == workers
+        assert len(shard) == settings["dcl"]["n"]
+    agent = dp.NNAgent.load(str(output / "agent_gen2"))
+    assert agent.info["generation"] == 2
 
 
 @pytest.fixture(scope="session")

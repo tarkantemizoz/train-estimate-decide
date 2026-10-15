@@ -1,17 +1,15 @@
-"""Shared model construction, provenance, and a resumable DCL generation loop."""
+"""Translate JSON options to native DynaPlex objects and call DCL.run()."""
 
+import contextlib
 import hashlib
 import importlib
 import json
 import os
-import platform
-import shutil
-import socket
+import sys
+import tempfile
 import time
-from importlib.metadata import version
+import traceback
 from pathlib import Path
-
-from . import DYNAPLEX_VERSION
 
 
 def digest(value):
@@ -26,158 +24,106 @@ def write_json(path, value):
 
 
 def record_timing(output, result):
-    """Keep the first completion timing when a later invocation only resumes."""
     write_json(output / "latest_invocation.json", result)
     if not (output / "timing.json").exists():
         write_json(output / "timing.json", result)
 
 
-def source_hash():
-    root = Path(__file__).resolve().parents[1]
-    files = sorted(
-        p
-        for package in ("ted_tutorial", "lost_sales_stationary", "zero_shot_lost_sales_inventory_control")
-        for p in (root / package).glob("*.py")
-    )
-    return digest({str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files})
-
-
 def model_parts(environment, config):
     module = importlib.import_module(f"{environment}.model")
     if environment == "lost_sales_stationary":
-        model = module.StationaryLostSalesMDP(**config["model"])
+        model = module.StationaryLostSalesMDP(**config.get("model", {}))
         features = module.StationaryFeaturizer
     else:
-        model = module.ZeroShotLostSalesMDP(**config["model"])
+        model = module.ZeroShotLostSalesMDP(**config.get("model", {}))
         features = module.ZeroShotFeaturizer
     if model.evaluate:
         raise ValueError("Training requires a super-MDP with evaluate=False")
     return model, module.GreedyCappedBaseStockPolicy(model), features
 
 
-def prepare_run(environment, config, output, world_size=1):
-    if version("dynaplex") != DYNAPLEX_VERSION:
-        raise ValueError(f"Install the pinned dynaplex=={DYNAPLEX_VERSION} from requirements.txt")
-    output = Path(output)
-    output.mkdir(parents=True, exist_ok=True)
-    experiment = {
-        key: config[key] for key in ("model", "dcl", "network", "train", "execution", "generations")
+def build_experiment(environment, config, output=None):
+    import dynaplex as dp
+
+    model, policy, features = model_parts(environment, config)
+    options = dict(config.get("dcl", {}))
+    for name in ("gen0", "trained"):
+        if name in options and options[name] is not None:
+            options[name] = dp.Shape(**options[name])
+    for name in ("network", "train"):
+        if name in config:
+            if name in options:
+                raise ValueError(f"Specify {name} once, at the top level")
+            options[name] = dp.MLP(**config[name]) if name == "network" else config[name]
+    if output is not None:
+        options["workdir"] = str(output)
+    return dp.DCL(model, policy, features=features, **options)
+
+
+def describe_experiment(experiment):
+    return {
+        "plan": experiment.plan.describe() if experiment.plan is not None else None,
+        "gen0": dict(zip(("processes", "engines", "workers", "slots"), experiment.gen0.as_tuple())),
+        "trained": dict(zip(("processes", "engines", "workers", "slots"), experiment.trained.as_tuple())),
+        "device": experiment.device,
+        "training_device": experiment.train.get("device", experiment.train_device),
+        "torch_threads": experiment.torch_threads,
+        "dcl": json.loads((Path(experiment.workdir) / "dcl.json").read_text()),
     }
-    record = {
-        "environment": environment,
-        "config": experiment,
-        "world_size": world_size,
-        "source_sha256": source_hash(),
-        "python": platform.python_version(),
-        "packages": {name: version(name) for name in ("dynaplex", "numpy", "torch")},
-        "hostname": socket.gethostname(),
-        "platform": platform.platform(),
-    }
-    identity = {
-        key: record[key] for key in ("environment", "config", "world_size", "source_sha256", "packages")
-    }
-    record["identity"] = digest(identity)
-    path = output / "run_config.json"
-    if path.exists():
-        if json.loads(path.read_text()).get("identity") != record["identity"]:
-            raise ValueError("This directory records a different run; select a new --output directory")
-    else:
-        if any(output.glob("agent_gen*")) or (output / "dcl.json").exists():
-            raise ValueError("Existing research artifacts lack this trainer's provenance; use a new output")
-        write_json(path, record)
-    return output
+
+
+def preview(environment, config):
+    # DCL constructs the plan and resolves defaults; discard its temporary run record.
+    with tempfile.TemporaryDirectory(prefix="ted-plan-") as directory:
+        return describe_experiment(build_experiment(environment, config, directory))
 
 
 def saved_agent(path):
     import dynaplex as dp
 
-    path = Path(path)
-    if not path.exists():
-        return None
-    if not all((path / name).is_file() for name in ("agent.json", "weights.pt")):
-        raise ValueError(f"Incomplete checkpoint {path}; preserve it and select a fresh output directory")
-    return dp.NNAgent.load(str(path))
+    return dp.NNAgent.load(str(path)) if Path(path).exists() else None
 
 
-def fit_and_save(samples, config, path):
-    import dynaplex as dp
-    import torch
+class Tee:
+    def __init__(self, console, log):
+        self.console, self.log = console, log
 
-    execution = config["execution"]
-    torch.set_num_threads(execution["fit_threads"])
-    kwargs = {"seed": config["dcl"].get("seed", 0), "verbose": True, "device": execution["device"]} | config[
-        "train"
-    ]
-    agent = dp.train_network(samples, network=dp.MLP(**config["network"]), **kwargs)
-    path = Path(path)
-    temp = path.with_name(path.name + ".tmp")
-    if temp.exists():
-        shutil.rmtree(temp)
-    agent.save(str(temp))
-    saved_agent(temp)
-    temp.rename(path)
-    return agent
+    def write(self, text):
+        self.console.write(text)
+        self.log.write(text)
+        self.flush()
+
+    def flush(self):
+        self.console.flush()
+        self.log.flush()
+
+    def isatty(self):
+        return False
 
 
-def run_local(environment, config, output):
-    import dynaplex as dp
-    import torch
-
+def run_local(environment, config, output=None):
     started = time.perf_counter()
-    output = prepare_run(environment, config, output)
-    model, policy, features = model_parts(environment, config)
-    execution = config["execution"]
-    shape = dp.Shape(**{key: execution[key] for key in ("processes", "engines", "workers", "slots")})
-    experiment = dp.DCL(
-        model,
-        policy,
-        features=features,
-        **config["dcl"],
-        network=dp.MLP(**config["network"]),
-        train=config["train"],
-        gen0=shape,
-        trained=shape,
-        machine=None,
-        device=execution["device"],
-        torch_threads=execution["torch_threads"],
-        workdir=str(output),
-        sample_info=True,
-        jit=True,
-    )
-    print(f"Collection: {shape.describe()}; device={execution['device']}", flush=True)
-    print(f"Artifacts: {output}", flush=True)
-    stages = []
-    for generation in range(config["generations"]):
-        path = output / f"agent_gen{generation + 1}"
-        if saved_agent(path) is not None:
-            print(f"{path.name} exists; skipping", flush=True)
-            stages.append({"generation": generation + 1, "resumed": True})
-            continue
-        samples_path = output / f"samples_gen{generation}"
-        collected_at = time.perf_counter()
-        if samples_path.exists():
-            samples = dp.SampleSet.load(str(samples_path))
-        else:
-            torch.set_num_threads(execution["torch_threads"])
-            samples = experiment.collect(generation)
-            samples.save(str(samples_path))
-        collected_seconds = time.perf_counter() - collected_at
-        fitting_at = time.perf_counter()
-        fit_and_save(samples, config, path)
-        stages.append(
-            {
-                "generation": generation + 1,
-                "collect_or_load_seconds": collected_seconds,
-                "fit_and_save_seconds": time.perf_counter() - fitting_at,
+    experiment = build_experiment(environment, config, output)
+    output = Path(experiment.workdir)
+    with (output / "training.log").open("a") as log:
+        with (
+            contextlib.redirect_stdout(Tee(sys.stdout, log)),
+            contextlib.redirect_stderr(Tee(sys.stderr, log)),
+        ):
+            print(f"Artifacts: {output}", flush=True)
+            write_json(output / "requested_config.json", config)
+            write_json(output / "execution_plan.json", describe_experiment(experiment))
+            try:
+                agents = experiment.run(generations=config["generations"])
+            except BaseException:
+                traceback.print_exc()
+                raise
+            result = {
+                "elapsed_seconds": time.perf_counter() - started,
+                "checkpoint": f"agent_gen{config['generations']}",
+                "checkpoint_saved": len(agents) >= config["generations"],
+                "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
             }
-        )
-    result = {
-        "elapsed_seconds": time.perf_counter() - started,
-        "stages": stages,
-        "checkpoint": f"agent_gen{config['generations']}",
-        "checkpoint_saved": True,
-        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
-    }
-    record_timing(output, result)
-    print(f"Ready: {output / result['checkpoint']} ({result['elapsed_seconds']:.1f}s)", flush=True)
+            record_timing(output, result)
+            print(f"Ready: {output / result['checkpoint']} ({result['elapsed_seconds']:.1f}s)", flush=True)
     return result

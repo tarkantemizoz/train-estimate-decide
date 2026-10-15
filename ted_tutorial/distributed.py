@@ -5,12 +5,12 @@ It does not claim native MPI support or single-node bitwise equivalence.
 """
 
 import copy
+import inspect
 import time
 import traceback
 from pathlib import Path
 
-from .config import resolve_config
-from .training import digest, fit_and_save, model_parts, prepare_run, record_timing, saved_agent
+from .training import build_experiment, digest, record_timing, saved_agent, write_json
 
 
 def aggregate_shards(shards, *, generation, world_size, total_samples):
@@ -95,17 +95,34 @@ def _run(comm, rank, size, environment, config, output):
     import torch
 
     started = time.perf_counter()
-    config = resolve_config(config, world_size=size)
     identities = comm.allgather(digest(config))
     if len(set(identities)) != 1:
-        raise ValueError("MPI ranks have different resolved configurations or allocations")
+        raise ValueError("MPI ranks have different requested configurations")
+    total = config.get("dcl", {}).get("n", inspect.signature(dp.DCL).parameters["n"].default)
+    quota = total // size + (rank < total % size)
+    if quota < 2:
+        raise ValueError("Each MPI rank needs at least two samples")
+    local_config = copy.deepcopy(config)
+    local_config.setdefault("dcl", {})["n"] = quota
+    experiment = build_experiment(environment, local_config, output / "ranks" / f"rank{rank:04d}")
+    if not experiment.sample_info:
+        raise ValueError("MPI aggregation requires dcl.sample_info=true")
+    if experiment.plan is not None:
+        from dynaplex.machine import verify_plan
+
+        verify_plan(experiment.plan)
     if rank == 0:
-        prepare_run(environment, config, output, size)
-        print(f"MPI: {size} ranks; total N={config['dcl']['n']:,} per generation", flush=True)
+        identity = {"environment": environment, "config": config, "world_size": size}
+        identity_path = output / "mpi_config.json"
+        if identity_path.exists():
+            import json
+
+            if json.loads(identity_path.read_text()) != identity:
+                raise ValueError("MPI run configuration changed; select a fresh output directory")
+        else:
+            write_json(identity_path, identity)
+        print(f"MPI: {size} ranks; total N={total:,} per generation", flush=True)
     comm.Barrier()
-    model, policy, features = model_parts(environment, config)
-    execution = config["execution"]
-    quota = config["dcl"]["n"] // size + (rank < config["dcl"]["n"] % size)
     stages = []
     for generation in range(config["generations"]):
         agent_path = output / f"agent_gen{generation + 1}"
@@ -115,26 +132,47 @@ def _run(comm, rank, size, environment, config, output):
         generation_start = time.perf_counter()
         shard_path = output / f"shards_gen{generation}" / f"rank{rank:04d}"
         if not shard_path.exists():
-            torch.set_num_threads(execution["torch_threads"])
+            if experiment.torch_threads is not None:
+                torch.set_num_threads(experiment.torch_threads)
             agent = None if generation == 0 else saved_agent(output / f"agent_gen{generation}")
             if agent is not None:
-                agent.to(execution["device"])
-            params = config["dcl"] | {"n": quota, "generation": generation * size + rank}
+                agent.to(experiment.device)
+                if experiment.compile_agent:
+                    agent.compile()
+            shape = experiment.shape(generation)
+            params = {
+                key: getattr(experiment, key)
+                for key in (
+                    "n",
+                    "m",
+                    "h",
+                    "seed",
+                    "reduction_factor",
+                    "final_field",
+                    "warmup_time",
+                    "restart_after",
+                    "steps_per_round",
+                    "jit",
+                    "gc_threshold_bytes",
+                    "policy_binding",
+                    "policy_precision",
+                    "torch_threads",
+                    "sample_info",
+                )
+            }
             samples = dp.collect_samples(
-                model,
-                policy,
-                features=features,
+                experiment.mdp,
+                experiment.policy,
+                features=experiment.features,
                 **params,
+                generation=generation * size + rank,
                 rollout_agent=agent,
-                processes=execution["processes"],
-                controllers=1,
-                workers=execution["workers"],
-                slots=execution["slots"],
-                torch_threads=execution["torch_threads"],
-                sample_info=True,
-                jit=True,
+                processes=shape.processes,
+                controllers=shape.engines,
+                workers=shape.workers,
+                slots=shape.slots,
                 verbose=rank == 0,
-                checks="rehearsal" if generation == 0 else False,
+                checks=experiment.checks if generation == 0 else False,
                 provenance={"mpi_rank": rank, "mpi_size": size, "logical_generation": generation},
             )
             samples.save(str(shard_path))
@@ -149,12 +187,19 @@ def _run(comm, rank, size, environment, config, output):
                 samples = dp.SampleSet.load(str(merged_path), mmap=True)
             else:
                 samples = aggregate_shards(
-                    shards, generation=generation, world_size=size, total_samples=config["dcl"]["n"]
+                    shards, generation=generation, world_size=size, total_samples=total
                 )
                 samples.save(str(merged_path))
             collected_seconds = time.perf_counter() - generation_start
             fit_start = time.perf_counter()
-            fit_and_save(samples, config, agent_path)
+            if experiment.torch_threads is not None:
+                torch.set_num_threads(experiment.torch_threads)
+            train = dict(experiment.train)
+            train.setdefault("seed", experiment.seed)
+            train.setdefault("device", experiment.train_device)
+            agent = dp.train_network(samples, network=experiment.network or dp.MLP(), **train)
+            agent.save(str(agent_path))
+            saved_agent(agent_path)
             stages.append(
                 {
                     "generation": generation + 1,

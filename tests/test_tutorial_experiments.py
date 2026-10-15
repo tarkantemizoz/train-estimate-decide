@@ -26,7 +26,7 @@ def command(*arguments):
 def checkpoints(tmp_path_factory):
     directory = tmp_path_factory.mktemp("experiment-policies")
     config = json.loads((ROOT / "configs/training/smoke.json").read_text())
-    config["execution"].update(processes=1, workers=1, device="cpu", torch_threads=1, fit_threads=1)
+    config["dcl"].update(machine=None, torch_threads=1)
     config["generations"] = 1
     path = directory / "config.json"
     path.write_text(json.dumps(config))

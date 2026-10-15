@@ -8,7 +8,8 @@ The network is not retrained during deployment.
 
 The live exercise uses stationary demand and known deterministic lead times.
 It trains with **100,000 samples, one policy-improvement generation, M=500, and rollout horizon 21**.
-Training took approximately five minutes on the preparation laptop (Apple M5 Pro, 15 CPU cores, MPS).
+The original reference configuration trained in approximately five minutes on the preparation laptop (Apple M5 Pro, 15 CPU cores, MPS).
+The current training command delegates execution planning to DynaPlex; that earlier timing does not describe every native plan.
 The reference run exceeded the rounded online-learning benchmark mean in 62 of 64 instance/checkpoint combinations.
 These are measurements of one trained policy; runtime and scores can change with hardware and training randomness.
 See the [experiment protocol](docs/experiments.md) before interpreting comparisons.
@@ -42,7 +43,9 @@ python train.py lost_sales_stationary configs/training/laptop.json
 ```
 
 The smoke run checks two tiny generations; it does not produce a competitive policy.
-The laptop run uses all allowed CPU cores for simulation and automatically selects CUDA, MPS, or CPU for the network.
+Edit only `configs/training/laptop.json` for the laptop experiment.
+Its `dcl.machine` is `"auto"`; DynaPlex chooses execution settings, and omitted options retain native defaults.
+Inspect them with the same training command plus `--dry-run`.
 It saves the trained policy at `runs/tutorial_laptop/agent_gen1`, with logs, samples, configuration, and timings alongside it.
 An unchanged command resumes completed work; use `--output runs/my_experiment` to start a separate run.
 The 25-minute target covers training through a saved policy, excluding installation and evaluation.

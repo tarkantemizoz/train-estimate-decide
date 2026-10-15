@@ -252,7 +252,6 @@ def stage(settings, environment, config, output):
     ssh(settings, setup_script(settings, release, venv))
     remote_config = copy.deepcopy(config)
     remote_config["workstation"] = {"target": "local"}
-    remote_config.setdefault("execution", {}).setdefault("device", "cuda" if settings["gpus"] else "cpu")
     script = job_script(settings, environment, release, venv, jobdir)
     output.mkdir(parents=True, exist_ok=True)
     write_json(output / "submitted_config.json", remote_config)

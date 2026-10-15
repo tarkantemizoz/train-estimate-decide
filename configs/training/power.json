@@ -12,7 +12,16 @@
     "restart_after": 100,
     "reduction_factor": 4,
     "final_field": 5,
-    "seed": 0
+    "seed": 0,
+    "machine": "genoa",
+    "gen0": {
+      "processes": 48,
+      "workers": 3
+    },
+    "trained": {
+      "processes": 48,
+      "workers": 2
+    }
   },
   "network": {
     "hidden": [
@@ -30,14 +39,6 @@
     "patience": 15,
     "val_fraction": 0.05,
     "val_every": 1
-  },
-  "execution": {
-    "processes": "auto",
-    "workers": "auto",
-    "slots": 512,
-    "device": "auto",
-    "torch_threads": "auto",
-    "fit_threads": "auto"
   },
   "generations": 5,
   "workstation": {
