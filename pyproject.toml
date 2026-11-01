@@ -3,20 +3,26 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dynaplex-stationary-lost-sales"
+name = "train-estimate-decide"
 version = "0.1.0"
-description = "Stationary and cyclic zero-shot lost-sales super-MDP ports for DynaPlex 1.14"
+description = "Train, then Estimate and Decide (TED): lost-sales super-MDPs for DynaPlex 1.14"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.13,<3.14"
 dependencies = ["dynaplex==1.14.0", "numpy>=2.2,<3", "torch>=2.6,<3"]
 
 [project.optional-dependencies]
-dev = ["pytest>=9,<10", "ruff>=0.15,<1", "gymnasium>=1.2,<2"]
+dev = ["pytest>=9,<10", "ruff>=0.15,<1"]
 
 [tool.setuptools.packages.find]
-include = ["lost_sales_stationary*", "zero_shot_lost_sales_inventory_control*", "ted_tutorial*"]
+include = ["envs*"]
+
+[tool.setuptools.package-data]
+"envs.lost_sales.cases" = ["*.csv", "*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 target-version = "py313"

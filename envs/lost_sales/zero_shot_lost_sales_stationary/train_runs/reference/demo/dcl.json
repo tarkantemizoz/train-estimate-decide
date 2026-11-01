@@ -1,0 +1,47 @@
+{
+  "exp_hash": "1b6091263f5d3de5e05005d47de7f1d4cda5a7fccfd6e8c885ad710aa69dcfdc",
+  "featurizer": "envs.lost_sales.zero_shot_lost_sales_stationary.model.StationaryFeaturizer",
+  "format": "dynaplex-dcl-v1",
+  "keep_samples": "all",
+  "mdp_class": "envs.lost_sales.zero_shot_lost_sales_stationary.model.StationaryLostSalesMDP",
+  "mdp_hash": "df97195ca124ec4484f7cb111fbc3cf4f1c7cb59a6cc5bf3e075ac806a4d1f95",
+  "network": {
+    "factory": "dynaplex.nn.mlp_factory",
+    "kwargs": {
+      "hidden": [
+        256,
+        128,
+        128,
+        128
+      ]
+    }
+  },
+  "params": {
+    "final_field": 5,
+    "gen0": {
+      "controllers": 3,
+      "slots_per_controller": 2048
+    },
+    "h": 21,
+    "m": 500,
+    "n": 100000,
+    "reduction_factor": 4,
+    "restart_after": 100,
+    "seed": 0,
+    "seed_layout": 2,
+    "steps_per_round": 0,
+    "trained": {
+      "controllers": 1,
+      "slots_per_controller": 1536
+    },
+    "warmup_time": 100
+  },
+  "policy_class": "envs.lost_sales.zero_shot_lost_sales_stationary.policies.GreedyCappedBaseStockPolicy",
+  "train": {
+    "batch_size": 1024,
+    "epochs": 100,
+    "lr": 0.001,
+    "patience": 15,
+    "val_every": 1
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "mdp": {
+    "max_p": 100.0,
+    "max_demand": 12.0,
+    "max_leadtime": 10,
+    "max_num_cycles": 7,
+    "train_stochastic_leadtimes": true,
+    "train_cyclic_demand": true
+  }
+}

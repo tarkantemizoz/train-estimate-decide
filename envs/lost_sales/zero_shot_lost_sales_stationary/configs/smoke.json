@@ -1,0 +1,31 @@
+{
+  "mdp": {
+    "max_p": 100.0,
+    "max_demand": 12.0,
+    "max_leadtime": 10
+  },
+  "dcl": {
+    "n": 128,
+    "m": 8,
+    "h": 5,
+    "warmup_time": 5,
+    "restart_after": 8,
+    "seed": 0
+  },
+  "network": {
+    "hidden": [
+      256,
+      128,
+      128,
+      128
+    ]
+  },
+  "train": {
+    "epochs": 2,
+    "batch_size": 32,
+    "lr": 0.001,
+    "patience": 15,
+    "val_every": 1
+  },
+  "generations": 2
+}

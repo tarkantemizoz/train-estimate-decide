@@ -1,19 +1,11 @@
-# Training with DynaPlex
+# Training
 
-Run training from the project directory with one configuration file:
-
-```sh
-python train.py lost_sales_stationary configs/training/laptop.json
-```
-
-Edit that same `laptop.json` to change the experiment.
-The selected tutorial budget is 100,000 samples, one generation, M=500, and H=21.
-The command constructs the environment and calls DynaPlex's `DCL(...).run(...)`.
-DynaPlex selects the hardware plan, collects samples, fits networks, saves policies, and resumes completed generations.
+This guide installs the software, trains each environment with deep controlled learning (DCL), and runs training on a laptop or on the Snellius supercomputer.
+[Environments](environments.md) describes what is trained, and [Evaluation](evaluation.md) how to test the result.
 
 ## Installation
 
-Use Python 3.13 and the pinned dependencies:
+Install Python 3.13, then, from the repository root:
 
 ```sh
 python3.13 -m venv .venv
@@ -23,119 +15,143 @@ python -m dynaplex.selftest
 ```
 
 On Windows, use `py -3.13 -m venv .venv` and `.venv\Scripts\Activate.ps1` in PowerShell.
-DynaPlex is pinned to 1.14.0, NumPy to 2.5.3, and PyTorch to 2.14.0.
-For Linux CPU installations, install the CPU PyTorch wheel first with `python -m pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu`.
-The CUDA wheel index for this PyTorch version is `https://download.pytorch.org/whl/cu130` and requires a compatible NVIDIA driver.
 
-## One configuration, native defaults
-
-| JSON section | Passed to |
-| --- | --- |
-| `model` | The selected environment constructor |
-| `dcl` | `dynaplex.DCL(...)` keyword arguments |
-| `network` | `dynaplex.MLP(...)`, passed as DCL's `network` |
-| `train` | DCL's `train` argument |
-| `generations` | `DCL.run(generations=...)`; required |
-| `output` | DCL's `workdir`; optional, and overridden by `--output` |
-| `workstation` | Optional Snellius connection and job submission settings |
-
-Omitted DCL, network, and fitting options retain DynaPlex's defaults.
-The tutorial does not select worker counts, devices, or thread counts itself.
-There is no custom `execution` section.
-The example keeps the chosen research hyperparameters explicit so that changing hardware does not change the training budget.
-
-Inside `dcl`, the standard laptop setting is:
-
-```json
-"machine": "auto"
-```
-
-Omitting `machine` has the same effect, because `"auto"` is DynaPlex's default.
-DynaPlex 1.14 recognizes laptops automatically on macOS and Windows.
-On a Linux desktop, set `"machine": "laptop"` explicitly; native `auto` recognizes cluster allocations on Linux.
-`"machine": null` disables the plan and uses DynaPlex's simple CPU defaults, as in the small smoke example.
-
-For an explicit generation-0 override, add this inside `dcl` in the same file:
-
-```json
-"gen0": {"processes": 3, "workers": 4}
-```
-
-Only those two fields override the native plan.
-Unspecified fields retain the plan's values.
-Remove `gen0` to return to the fully automatic plan.
-Use `trained` for collection with the learned policy in later generations.
-Both objects accept DynaPlex's `processes`, `engines`, `workers`, and `slots` fields.
-Other native overrides include `dcl.device`, `dcl.torch_threads`, and `train.device`.
-There is no separate tutorial `fit_threads` default.
-
-Inspect the exact resolved plan and native experiment record without training:
+`requirements.txt` pins the tested versions of DynaPlex, NumPy and PyTorch.
+On Linux, `pip` installs the CUDA build of PyTorch by default, a download of several gigabytes.
+Without an NVIDIA GPU, install the CPU build first, then the requirements:
 
 ```sh
-python train.py lost_sales_stationary configs/training/laptop.json --dry-run
+python -m pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+python -m pip install -r requirements.txt
 ```
 
-This calls DynaPlex to resolve the configuration; it does not implement another hardware planner.
-See the official [DCL guide](https://github.com/DynaPlex/DynaPlex/blob/main/docs/training/dcl.md) and [machine-plan guide](https://github.com/DynaPlex/DynaPlex/blob/main/docs/training/machines.md).
-The installed pinned version is authoritative where the current documentation differs.
+## Training an environment
 
-## Saved runs
+`train.py` takes an environment and a config, a file in the environment's `configs/` folder:
 
-With the supplied laptop configuration, the policy is saved in `runs/tutorial_laptop/agent_gen1`.
-DynaPlex writes `dcl.json`, samples, and numbered agent directories, and handles resuming.
-The tutorial additionally records `training.log`, the requested JSON, the resolved execution plan, and total elapsed time in `timing.json`.
-The timing covers training through saved and reloaded policies; installation and evaluation are excluded.
-A subsequent resume records its duration in `latest_invocation.json` without replacing the first completion time.
+```sh
+python train.py zero_shot_lost_sales_stationary demo
+python train.py lost_sales demo --instance online-012
+sbatch machines/genoa.sbatch train.py zero_shot_lost_sales_large gc_lsn
+```
 
-DynaPlex rejects an explicitly named work directory containing an incompatible experiment.
-Use `--output runs/my_experiment` for a fresh run.
-If both `output` and `dcl.workdir` are omitted, DynaPlex creates its normal experiment-specific directory.
-Changing a collection shape can change the sample realization and learned policy even with the same seed.
-Earlier five-minute and 62/64 reference results describe the original training configuration, not a guarantee for the native automatic plan.
+| Environment | Configs | What a run produces |
+| --- | --- | --- |
+| `zero_shot_lost_sales_stationary` | `demo`: 100,000 samples, one generation | A network for every stationary instance in the training ranges |
+| `zero_shot_lost_sales_large` | `gc_lsn`: the paper's 5 million samples per generation, five generations | GC-LSN, for every instance of the paper |
+| `lost_sales` | `demo`, with `--instance <ID>` | An agent for that one instance |
 
-## Larger experiments
+Every environment also has a `smoke` config, a few seconds of training that the tests use.
+A config can also be a path: `python train.py zero_shot_lost_sales_stationary my_configs/wide.json`.
 
-| Example | Environment | Samples per generation | Generations | Native plan |
-| --- | --- | ---: | ---: | --- |
-| `laptop.json` | Stationary | 100,000 | 1 | `auto` |
-| `smoke.json` | Either | 128 | 2 | No plan, small CPU check |
-| `power.json` | Stationary | 5,000,000 | 5 | `genoa` with explicit shapes |
-| `gc_lsn_power.json` | Full GC-LSN | 5,000,000 | 5 | `genoa` with explicit shapes |
-| `snellius_genoa.json` | Full GC-LSN | 5,000,000 | 5 | `genoa` with explicit shapes |
-| `snellius_mpi.json` | Full GC-LSN | 5,000,000 total across nodes | 5 | `genoa` on each node |
-| `snellius_gpu.json` | Full GC-LSN | 1,000,000 | 5 | `gpu_h100_quarter` with explicit shapes |
+Measured on an Apple M5 Pro with the default plan, which runs 3 workers there, the `demo` config of `zero_shot_lost_sales_stationary` took 236 seconds, 224 of them to collect the samples, and the single-instance `demo` for `online-012` took 139 seconds.
+With 12 workers, as the shipped `reference/demo` was trained, they took 80 and 45 seconds; see [Machines](#machines).
+`gc_lsn` is 250 times the samples of `demo`, which is why it runs on Snellius.
 
-All example files are in `configs/training`.
-Use `zero_shot_lost_sales_inventory_control` for the full-model configurations.
-The large single-node examples explicitly distribute samples across more processes because DynaPlex 1.14 limits each controller's random-stream capacity.
-Those overrides are visible configuration values; the tutorial does not calculate a replacement plan.
-DynaPlex's native runtime checks remain authoritative.
-These profiles are starting configurations, not measured scaling results or reproductions of the paper's trained GC-LSN agent.
+## Configs
+
+A config is a JSON file with these sections:
+
+```json
+{
+  "mdp": {"max_p": 100.0, "max_demand": 12.0, "max_leadtime": 10},
+  "dcl": {"n": 100000, "m": 500, "h": 21, "warmup_time": 100, "restart_after": 100, "seed": 0},
+  "network": {"hidden": [256, 128, 128, 128]},
+  "train": {"epochs": 100, "batch_size": 1024, "lr": 0.001, "patience": 15, "val_every": 1},
+  "generations": 1
+}
+```
+
+- `mdp`: the MDP's keyword arguments.
+  For a super-MDP they are the training ranges: the largest penalty, mean demand and lead time an instance can have, and, for `zero_shot_lost_sales_large`, the longest demand cycle and whether lead times can be stochastic and demand cyclic.
+  The ranges are part of the network: an instance outside them asks it to extrapolate, and `evaluate.py` builds every instance with the ranges of the agent's config.
+  The single-instance `lost_sales` has no `mdp` section; `--instance` defines its model.
+- `dcl`: the sampling budget of each generation, passed to DynaPlex's DCL.
+  `n` decision states are labeled per generation.
+  To label a state, DCL takes every admissible order once and then follows the current policy for `h` periods, averaged over up to `m` rollouts, and labels the state with the cheapest order.
+  Orders that are clearly worse are dropped after fewer rollouts.
+  Before labeling, each trajectory runs `warmup_time` periods under the current policy, and after `restart_after` labels it restarts from a fresh instance.
+- `network`: the hidden layers of the multilayer perceptron.
+- `train`: fitting the network to the labels with cross-entropy: at most `epochs` passes, stopping early once the validation loss has not improved for more than `patience` epochs.
+- `generations`: generation 0 rolls out the environment's `BasePolicy`, a greedy capped base-stock policy; each later generation rolls out the previous network.
+
+The paper's GC-LSN used `n` = 5 million, `m` = 500, `h` = 21 and five generations: the `gc_lsn` config.
+The [DynaPlex DCL guide](https://github.com/DynaPlex/DynaPlex/blob/main/docs/training/dcl.md) and the [DCL paper](https://www.sciencedirect.com/science/article/pii/S0377221725000463) explain the algorithm.
+
+## Runs and resuming
+
+A run is saved in `envs/<family>/<environment>/train_runs/<machine>/<config>/`, and a single-instance run in `.../<config>/<instance>/`:
+
+```text
+agent_gen1/, agent_gen2/, ...   the trained networks: weights.pt and agent.json
+samples_gen0/, ...              the labeled samples of each generation
+config.json, machine.json       the settings the run used
+dcl.json                        DynaPlex's record of the experiment
+train.log                       the console output
+```
+
+`evaluate.py --agent <machine>/<config>` evaluates the last generation of a run, such as `--agent laptop/demo`.
+
+Running the same command again resumes an interrupted run, or adds generations after you increase `generations`.
+DynaPlex refuses to continue a run whose experiment changed, such as the MDP, the budget or the network, with a `WorkdirMismatchError`.
+To change the experiment, copy the config under a new name.
+Runs stay out of git; to share a trained network, add its `agent_gen<g>/` and `config.json` with `git add -f`.
+
+## Machines
+
+DynaPlex chooses how to run DCL with a *machine plan*: how many processes, engines and worker threads collect samples, and where the network runs.
+`--machine` selects it, and the run folder is named after it:
+
+- `auto`, the default, recognizes the machine: the `laptop` plan on macOS and Windows, and on Snellius the plan of the allocation, such as `genoa` for a Genoa node.
+  On another Linux machine, outside a Slurm job, `train.py` uses the `laptop` plan, which DynaPlex derives from the machine's cores and accelerator.
+- A plan name: `laptop`, `genoa`, `gpu_h100_quarter`, `gpu_h100`, and the other [DynaPlex plans](https://github.com/DynaPlex/DynaPlex/blob/main/docs/training/machines.md).
+- A JSON file with your own settings, to override parts of a plan.
+
+`python train.py <environment> <config> --dry-run` prints the plan without training.
+
+A settings file overrides the plan's shapes for generation 0 (`gen0`) and for the trained network (`trained`), with any of `processes`, `engines`, `workers` and `slots`, or other DCL options such as `device`.
+For example, DynaPlex's `laptop` plan counts only 5 of the 15 cores of an Apple M5 Pro and runs 3 workers, as [DynaPlex issue 11](https://github.com/DynaPlex/DynaPlex/issues/11) reports.
+To use 12 workers, as for the reference network, create `machines/laptop_m5pro.local.json`:
+
+```json
+{
+  "machine": "auto",
+  "gen0": {"processes": 3, "workers": 4}
+}
+```
+
+```sh
+python train.py zero_shot_lost_sales_stationary demo --machine machines/laptop_m5pro.local.json
+```
+
+The run folder takes the file's name without `.json` and `.local`: `laptop_m5pro`.
+Files ending in `.local.json` stay out of git, since they describe your machine.
+A shape is part of DynaPlex's experiment record, so runs with different settings are different experiments, with slightly different samples.
 
 ## Snellius
 
-Set `workstation.target` to `"snellius"`, `workstation.host` to your SSH account, and select profile `genoa`, `mpi`, or `gpu`.
-The supplied remote examples contain those fields.
-SSH authentication must already work for `ssh YOUR_USERNAME@snellius.surf.nl`.
-The command uploads the tutorial code, installs the pinned requirements, submits a Slurm job, and retrieves policies and logs.
-Hardware planning inside each node is still handled by DynaPlex from `dcl.machine` and any explicit overrides.
+On the Snellius supercomputer, run the one-time setup on a login node, from the repository root:
 
-| Submission profile | Default allocation |
-| --- | --- |
-| `genoa` | One Genoa node, 192 CPUs, 336G memory |
-| `mpi` | Two Genoa nodes, 192 CPUs and 336G memory per node |
-| `gpu` | One H100 GPU, 16 CPUs, 64G memory |
+```sh
+module load 2025 Python/3.13.5-GCCcore-14.3.0
+python -m venv .venv && .venv/bin/pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cu130
+.venv/bin/pip install -r requirements.txt
+```
 
-Override host, account, partition, nodes, CPUs, memory, and wall time in `workstation` as needed.
-Keep the native machine plan consistent with the requested allocation.
-The module defaults are `2025`, `Python/3.13.5-GCCcore-14.3.0`, and `OpenMPI/5.0.8-GCC-14.3.0`.
-Queue waiting, installation, and transfers are outside the training timer.
-A remote `--dry-run` prints the submission script without SSH.
-Use `--no-wait` to return after submission and `--fetch` to retrieve an existing job.
-Downloaded policies are under `OUTPUT/remote/artifacts/agent_genG`.
+Then submit any repository command with one of the two batch scripts:
 
-Multi-node collection still needs the separate MPI adapter because DynaPlex 1.14's native DCL loop is single-node.
-Each rank uses a native DCL plan, collects its share of samples, and rank zero fits one shared network.
-MPI requires `dcl.sample_info=true` to retain rank and sample provenance.
-The adapter keeps disjoint collection-generation coordinates and validates the shard manifests before merging them.
-It does not implement hardware-selection rules or distributed gradient training.
+```sh
+sbatch machines/genoa.sbatch train.py zero_shot_lost_sales_large gc_lsn
+sbatch machines/gpu.sbatch train.py zero_shot_lost_sales_large gc_lsn
+sbatch machines/genoa.sbatch evaluate.py zero_shot_lost_sales_large --agent genoa/gc_lsn
+```
+
+`genoa.sbatch` requests a whole 192-core Genoa node and `gpu.sbatch` a quarter H100 node: one GPU and 16 cores.
+DynaPlex recognizes either allocation, so no `--machine` is needed.
+Both request 12 hours; change `--time` in the script for longer runs, and resubmit the same command to resume.
+The output goes to `slurm-<job>.out`, and the run's `train.log`.
+
+## Memory
+
+DCL collection and evaluation should use about the same memory whatever their size.
+The tests check this for every environment, because DynaPlex 1.14 does not free every kind of garbage on its own; see [Adding your own environment](environments.md#adding-your-own-environment).

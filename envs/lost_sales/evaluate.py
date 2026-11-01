@@ -1,0 +1,309 @@
+"""Evaluate heuristics, and optionally a trained agent, on the lost-sales cases; run it with the root evaluate.py:
+
+    python evaluate.py zero_shot_lost_sales_stationary --agent reference/demo --cases online --modes demand
+    python evaluate.py zero_shot_lost_sales_large --agent paper/gc_lsn --cases case1
+    python evaluate.py lost_sales --agent laptop/demo/online-003
+
+--agent is a run in <environment>/train_runs, whose last generation is used, an agent_gen<g> folder, or a path.
+Every evaluation includes the greedy policy DCL starts from and the tuned BS and CBS benchmarks.
+Modes: "known" parameters, or estimated from observations: "demand", "leadtime" or "both" (Case 3).
+With known parameters a policy is scored over KNOWN_HORIZON periods after WARMUP periods.
+With estimated parameters it starts cold and is scored over the first T periods, for each T in HORIZONS.
+Every policy is also compared with CBS on the same trajectories: the paired difference and its standard error.
+Results go to <environment>/eval_runs/<run>/gen<g>/<case>.csv, or to eval_runs/benchmarks without --agent.
+Repeating an interrupted command resumes it.
+"""
+
+import argparse
+import csv
+import json
+import math
+from collections import defaultdict
+from pathlib import Path
+
+import dynaplex as dp
+
+import envs
+
+from . import cases
+from .cases.online import published_scores
+from .cases.tune import benchmarks
+
+MODES = ("known", "demand", "leadtime", "both")
+# The paper's evaluation protocol; the command-line options override it.
+TRAJECTORIES = 1000
+KNOWN_HORIZON = 5000
+WARMUP = 100
+HORIZONS = (200, 500, 1000, 2000)
+SEED = 13021984
+FIELDS = (
+    "instance",
+    "mode",
+    "horizon",
+    "warmup",
+    "policy",
+    "mean",
+    "error",
+    "delta_cbs",
+    "delta_cbs_error",
+    "true_cost",
+)
+
+
+def find_agent(folder: Path, name: str) -> Path:
+    """An agent folder, from a run in the environment's train_runs (its last generation) or a path."""
+    path = Path(name)
+    if not path.exists():
+        path = folder / "train_runs" / name
+    if not (path / "agent.json").exists():
+        generations = sorted(
+            path.glob("agent_gen*"), key=lambda item: int(item.name.removeprefix("agent_gen"))
+        )
+        if not generations:
+            raise FileNotFoundError(f"no agent in {path}")
+        path = generations[-1]
+    return path
+
+
+def output_folder(folder: Path, agent: Path | None) -> Path:
+    if agent is None:
+        return folder / "eval_runs" / "benchmarks"
+    run = agent.resolve().parent.relative_to((folder / "train_runs").resolve())
+    return folder / "eval_runs" / run / agent.name.removeprefix("agent_")
+
+
+def label(folder: Path, agent: Path | None) -> str | None:
+    """The agent in settings.json: relative to the environment, so that a moved checkout still resumes."""
+    if agent is None:
+        return None
+    if agent.resolve().is_relative_to(folder.resolve()):
+        return agent.resolve().relative_to(folder.resolve()).as_posix()
+    return str(agent.resolve())
+
+
+def assess(model, policies: dict, horizon: int, warmup: int, args) -> dict:
+    """Simulate all policies on common random numbers; the result of each."""
+    comparer = dp.PolicyComparer(
+        model,
+        number_of_trajectories=args.trajectories,
+        horizon=horizon,
+        warmup_time=warmup,
+        seed=args.seed,
+        jit=True,
+    )
+    with envs.sweeping_at_safe_points():
+        if len(policies) == 1:
+            [(name, policy)] = policies.items()
+            return {name: comparer.assess(policy, name=name)}
+        return {result.name: result for result in comparer.compare(policies)}
+
+
+def window_rows(results: dict) -> list[dict]:
+    """A row per policy, with its difference from CBS paired per trajectory.
+
+    A trajectory has the same random numbers for every policy, even on another model of the instance, such
+    as the one BS and CBS run on, so the paired difference is more precise than the scores' errors suggest.
+    """
+    benchmark = results["CBS"].stats
+    rows = []
+    for name, result in results.items():
+        stats = result.stats
+        delta = (
+            stats.cumulative_cost / stats.time_elapsed - benchmark.cumulative_cost / benchmark.time_elapsed
+        )
+        rows.append(
+            {
+                "policy": name,
+                "mean": result.mean,
+                "error": result.error,
+                "delta_cbs": float(delta.mean()),
+                "delta_cbs_error": float(delta.std(ddof=1) / math.sqrt(len(delta))),
+                "true_cost": float((stats.true_cost / stats.time_elapsed).mean()),
+            }
+        )
+    return rows
+
+
+def evaluate_case(environment, instances, modes, agent, dimensions: dict, args, path: Path) -> None:
+    done = set()
+    if path.exists():
+        with path.open(newline="") as stream:
+            done = {(row["instance"], row["mode"], int(row["horizon"])) for row in csv.DictReader(stream)}
+    with path.open("a", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=FIELDS, lineterminator="\n")
+        if stream.tell() == 0:
+            writer.writeheader()
+        for instance in instances:
+            for mode in [mode for mode in instance.modes if mode in modes]:
+                windows = (
+                    [(args.known_horizon, args.warmup)]
+                    if mode == "known"
+                    else [(horizon, 0) for horizon in args.horizons]
+                )
+                windows = [
+                    (horizon, warmup)
+                    for horizon, warmup in windows
+                    if (instance.id, mode, horizon) not in done
+                ]
+                if not windows:
+                    continue
+                model = environment.MDP(**environment.instance_config(instance, mode, dimensions))
+                greedy = environment.SweepingBasePolicy(model)
+                policies = {"greedy": greedy} | ({"trained": agent} if agent else {})
+                # BS and CBS run on zero_shot_lost_sales_large, which draws the same demand for the same seed.
+                oracle, rules = benchmarks(instance, mode)
+                for horizon, warmup in windows:
+                    results = assess(model, policies, horizon, warmup, args)
+                    results |= assess(oracle, rules, horizon, warmup, args)
+                    window = {"instance": instance.id, "mode": mode, "horizon": horizon, "warmup": warmup}
+                    writer.writerows(window | row for row in window_rows(results))
+                    stream.flush()
+                print(f"{instance.id} {mode}: " + ", ".join(f"T={h}" for h, _ in windows), flush=True)
+
+
+def summarize(path: Path) -> None:
+    with path.open(newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    groups = defaultdict(list)
+    for row in rows:
+        groups[(row["mode"], int(row["horizon"]), row["policy"])].append(row)
+    print(
+        f"\n{path.stem}: means over the instances; lower is better, and negative profit with estimated\n"
+        "demand. Against CBS, paired per trajectory: the mean difference, and the instances where a policy\n"
+        "is better or worse, with the 95% confidence interval of the difference below or above zero."
+    )
+    print(
+        f"  {'mode':<8} {'T':<6} {'policy':<8} {'mean':>10} {'- CBS':>9} {'better':>7} {'worse':>6} {'of':>4}"
+    )
+    for (mode, horizon, policy), group in sorted(groups.items()):
+        mean = sum(float(row["mean"]) for row in group) / len(group)
+        line = f"  {mode:<8} {horizon:<6} {policy:<8} {mean:>10.3f}"
+        if policy != "CBS":
+            deltas = [(float(row["delta_cbs"]), float(row["delta_cbs_error"])) for row in group]
+            better = sum(delta + 1.96 * error < 0 for delta, error in deltas)
+            worse = sum(delta - 1.96 * error > 0 for delta, error in deltas)
+            line += f" {sum(delta for delta, _ in deltas) / len(deltas):>+9.3f} {better:>7} {worse:>6}"
+        else:
+            line += f" {'':>9} {'':>7} {'':>6}"
+        print(f"{line} {len(group):>4}")
+    if path.stem != "online":
+        return
+    reference = published_scores()
+    trained = [
+        row
+        for row in rows
+        if row["policy"] == "trained"
+        and row["mode"] == "demand"
+        and row["horizon"] in reference[row["instance"]]
+    ]
+    if trained:
+        # The published scores are rounded to 0.1, without standard errors.
+        wins = sum(-float(row["mean"]) > reference[row["instance"]][row["horizon"]] for row in trained)
+        robust = sum(
+            -float(row["mean"]) - 1.96 * float(row["error"])
+            > reference[row["instance"]][row["horizon"]] + 0.05
+            for row in trained
+        )
+        print(
+            f"The trained network beats the best published online method in {wins} of {len(trained)} windows, "
+            f"{robust} of them with its 95% lower bound above the rounded score."
+        )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("environment", choices=envs.names("lost_sales"))
+    parser.add_argument("--agent", help="a trained agent (see above); without it, heuristics only")
+    parser.add_argument("--cases", nargs="+", help="default: the environment's DEFAULT_CASES")
+    parser.add_argument("--instances", nargs="+", help="only these instance IDs, e.g. case1-000 online-003")
+    parser.add_argument(
+        "--modes", nargs="+", choices=MODES, help="default: every mode an instance is evaluated in"
+    )
+    parser.add_argument("--trajectories", type=int, default=TRAJECTORIES)
+    parser.add_argument(
+        "--horizons", type=int, nargs="+", default=list(HORIZONS), help="T, estimated parameters"
+    )
+    parser.add_argument(
+        "--known-horizon", type=int, default=KNOWN_HORIZON, help="scored periods, known parameters"
+    )
+    parser.add_argument("--warmup", type=int, default=WARMUP, help="unscored periods first, known parameters")
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--output", type=Path, help="default: derived from --agent")
+    args = parser.parse_args()
+    environment = envs.find(args.environment)
+    folder = Path(environment.__file__).parent
+
+    agent, path, trained = None, None, {}
+    if args.agent:
+        try:
+            path = find_agent(folder, args.agent)
+        except FileNotFoundError as error:
+            parser.error(str(error))
+        if not (path.parent / "config.json").exists():
+            parser.error(f"{path.parent} has no config.json; train.py writes one next to the agents")
+        trained = json.loads((path.parent / "config.json").read_text())
+        agent = dp.NNAgent.load(str(path))
+    # A single-instance agent applies to its own instance only.
+    only = trained.get("instance")
+    if only and args.instances and set(args.instances) != {only}:
+        parser.error(f"the agent was trained for {only} only")
+    ids = args.instances or ([only] if only else None)
+    names = args.cases or (
+        sorted({cases.case_of(i) for i in ids}) if ids else list(environment.DEFAULT_CASES)
+    )
+    if unknown := set(names) - set(cases.CASES):
+        parser.error(f"unknown cases {sorted(unknown)}; choose from {sorted(cases.CASES)}")
+    if unsupported := set(names) - set(environment.CASES):
+        parser.error(
+            f"{args.environment} cannot represent {sorted(unsupported)}; it covers {environment.CASES}"
+        )
+    if unsupported := set(args.modes or ()) - set(environment.MODES):
+        parser.error(f"{args.environment} simulates modes {environment.MODES}, not {sorted(unsupported)}")
+    modes = [mode for mode in environment.MODES if not args.modes or mode in args.modes]
+    selected = {
+        case: [
+            item
+            for item in cases.CASES[case]()
+            if (not ids or item.id in ids) and set(item.modes) & set(modes)
+        ]
+        for case in names
+    }
+    if missing := set(ids or ()) - {item.id for items in selected.values() for item in items}:
+        parser.error(f"not in the selected cases and modes: {sorted(missing)}")
+    if not any(selected.values()):
+        parser.error(f"no selected instance is evaluated in modes {modes}")
+
+    try:
+        output = args.output or output_folder(folder, path)
+    except ValueError:
+        parser.error(f"--agent is outside {args.environment}/train_runs; choose a folder with --output")
+    settings = {
+        "agent": label(folder, path),
+        "trajectories": args.trajectories,
+        "horizons": args.horizons,
+        "known_horizon": args.known_horizon,
+        "warmup": args.warmup,
+        "seed": args.seed,
+    }
+    output.mkdir(parents=True, exist_ok=True)
+    record = output / "settings.json"
+    if record.exists() and json.loads(record.read_text()) != settings:
+        parser.error(f"{output} holds results for other settings; choose another folder with --output")
+    for case in selected:
+        results = output / f"{case}.csv"
+        if results.exists() and results.read_text().partition("\n")[0] not in ("", ",".join(FIELDS)):
+            parser.error(
+                f"{results} has the columns of an older evaluate.py; choose another folder with --output"
+            )
+    record.write_text(json.dumps(settings, indent=2) + "\n")
+    dimensions = trained.get("mdp", environment.DIMENSIONS)
+    for case, instances in selected.items():
+        if instances:
+            evaluate_case(environment, instances, modes, agent, dimensions, args, output / f"{case}.csv")
+            summarize(output / f"{case}.csv")
+
+
+if __name__ == "__main__":
+    main()

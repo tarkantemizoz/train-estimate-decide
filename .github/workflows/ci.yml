@@ -24,6 +24,6 @@ jobs:
       - name: Check DynaPlex installation
         run: python -m dynaplex.selftest
       - name: Lint
-        run: python -m ruff check ted_tutorial lost_sales_stationary zero_shot_lost_sales_inventory_control tests train.py
+        run: python -m ruff check .
       - name: Tests
         run: python -m pytest -q

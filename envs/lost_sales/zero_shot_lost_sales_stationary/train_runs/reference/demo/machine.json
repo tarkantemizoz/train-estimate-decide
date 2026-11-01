@@ -1,0 +1,7 @@
+{
+  "machine": "auto",
+  "gen0": {
+    "processes": 3,
+    "workers": 4
+  }
+}

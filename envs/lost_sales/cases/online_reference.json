@@ -1,0 +1,622 @@
+{
+  "format": "ted-paper-online-reference-v1",
+  "reviewed_on": "2026-09-24",
+  "source": {
+    "title": "Zero-shot Generalization in Inventory Management: Train, then Estimate and Decide",
+    "doi": "10.1016/j.ejor.2025.12.033",
+    "version_inspected": "arXiv 2411.00515v3, 19 January 2026",
+    "table": 2,
+    "pdf_page_1_based": 27,
+    "url": "https://arxiv.org/html/2411.00515v3#S7.T2",
+    "pdf_url": "https://arxiv.org/pdf/2411.00515v3",
+    "pdf_sha256": "89238db53d034e7f715e65148deac6bfc13000d7c4aa7cb3f3aced9499b54470",
+    "validation": "All 64 online values and all 64 GC-LSN-E values checked against rendered PDF page 27. Published TU/e PDF returned HTTP 403."
+  },
+  "underlying_online_source": {
+    "title": "UCB-Type Learning Algorithms with Kaplan-Meier Estimator for Lost-Sales Inventory Models with Lead Times",
+    "authors": [
+      "Chengyi Lyu",
+      "Huanan Zhang",
+      "Linwei Xin"
+    ],
+    "doi": "10.1287/opre.2022.0273",
+    "tables": {
+      "geometric": 5,
+      "poisson": 6
+    },
+    "author_uploaded_published_text_url": "https://www.researchgate.net/publication/378625946_UCB-Type_Learning_Algorithms_with_Kaplan-Meier_Estimator_for_Lost-Sales_Inventory_Models_with_Lead_Times",
+    "method_set": [
+      "UCB-KM-CBS",
+      "UCB-KM-BS",
+      "UCB-CBS",
+      "UCB-BS",
+      "AJ",
+      "ZCS"
+    ],
+    "method_attribution_note": "TED Table 2 names the aggregate pi_B only. Method IDs here were identified from maxima of published Lyu Tables 5 and 6. A null marks a TED value absent from that source."
+  },
+  "protocol": {
+    "metric": "mean_profit_per_period",
+    "higher_is_better": true,
+    "period_profit": "p * units_sold - h * ending_on_hand_before_next_period_arrivals",
+    "holding_cost": 1.0,
+    "number_of_trajectories": 1000,
+    "horizons": [
+      200,
+      500,
+      1000,
+      2000
+    ],
+    "warmup_time": 0,
+    "initial_on_hand": 0,
+    "initial_pipeline": "empty",
+    "demand_information": "unknown distribution, censored observations",
+    "leadtime_information": "known deterministic",
+    "initial_demand_estimate": {
+      "family": "deterministic",
+      "value": 12
+    },
+    "checkpoint_interpretation": "Cumulative average from the first period through T, not a window after T periods of adaptation.",
+    "stationary_assessment_conversion": "profit = -assessment.mean when censored_demand=true",
+    "rounding_decimals": 1,
+    "online_standard_errors_available": false,
+    "online_raw_runs_available": false
+  },
+  "discrepancies": [
+    {
+      "instance_id": "online-013",
+      "horizon": 500,
+      "ted_table_2_online_profit": 65.5,
+      "lyu_table_5_max_online_profit": 65.0,
+      "lyu_method": "UCB-KM-BS",
+      "status": "unresolved_source_discrepancy",
+      "handling": "Keep TED value 65.5 as requested benchmark; report 65.0 separately as a sensitivity. Do not silently correct."
+    }
+  ],
+  "uncertainty_note": "Rounded external point estimates are reference targets, not deterministic ground truth. Candidate confidence intervals omit external benchmark sampling error; paired comparisons require raw matched comparator trajectories.",
+  "instances": [
+    {
+      "instance_id": "online-000",
+      "family": "poisson",
+      "p": 5.0,
+      "leadtime": 1,
+      "mean_demand": 10.0,
+      "std_demand": 3.1622776601683795,
+      "online_profit": {
+        "200": 41.9,
+        "500": 42.6,
+        "1000": 42.9,
+        "2000": 43.1
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 42.7,
+        "500": 43.1,
+        "1000": 43.2,
+        "2000": 43.3
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-BS"
+        ],
+        "500": [
+          "UCB-KM-BS"
+        ],
+        "1000": [
+          "UCB-KM-BS"
+        ],
+        "2000": [
+          "UCB-KM-BS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-001",
+      "family": "poisson",
+      "p": 5.0,
+      "leadtime": 3,
+      "mean_demand": 10.0,
+      "std_demand": 3.1622776601683795,
+      "online_profit": {
+        "200": 40.2,
+        "500": 41.2,
+        "1000": 41.6,
+        "2000": 41.8
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 41.6,
+        "500": 42.1,
+        "1000": 42.3,
+        "2000": 42.5
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-CBS"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-002",
+      "family": "poisson",
+      "p": 5.0,
+      "leadtime": 5,
+      "mean_demand": 10.0,
+      "std_demand": 3.1622776601683795,
+      "online_profit": {
+        "200": 38.6,
+        "500": 40.2,
+        "1000": 40.8,
+        "2000": 41.1
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 40.7,
+        "500": 41.5,
+        "1000": 41.8,
+        "2000": 42.0
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-CBS"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-003",
+      "family": "poisson",
+      "p": 5.0,
+      "leadtime": 7,
+      "mean_demand": 10.0,
+      "std_demand": 3.1622776601683795,
+      "online_profit": {
+        "200": 36.7,
+        "500": 39.1,
+        "1000": 40.0,
+        "2000": 40.5
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 39.9,
+        "500": 41.1,
+        "1000": 41.6,
+        "2000": 41.8
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-CBS"
+        ],
+        "500": [
+          "UCB-KM-CBS",
+          "UCB-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-004",
+      "family": "geometric",
+      "p": 5.0,
+      "leadtime": 1,
+      "mean_demand": 10.0,
+      "std_demand": 10.488088481701515,
+      "online_profit": {
+        "200": 26.7,
+        "500": 27.2,
+        "1000": 27.3,
+        "2000": 27.5
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 27.2,
+        "500": 27.5,
+        "1000": 27.7,
+        "2000": 27.8
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-CBS"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-005",
+      "family": "geometric",
+      "p": 5.0,
+      "leadtime": 3,
+      "mean_demand": 10.0,
+      "std_demand": 10.488088481701515,
+      "online_profit": {
+        "200": 24.1,
+        "500": 24.9,
+        "1000": 25.2,
+        "2000": 25.5
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 25.5,
+        "500": 25.8,
+        "1000": 26.0,
+        "2000": 26.1
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "AJ"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-006",
+      "family": "geometric",
+      "p": 5.0,
+      "leadtime": 5,
+      "mean_demand": 10.0,
+      "std_demand": 10.488088481701515,
+      "online_profit": {
+        "200": 22.7,
+        "500": 23.8,
+        "1000": 24.3,
+        "2000": 24.6
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 24.7,
+        "500": 25.3,
+        "1000": 25.6,
+        "2000": 25.8
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "AJ"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-007",
+      "family": "geometric",
+      "p": 5.0,
+      "leadtime": 7,
+      "mean_demand": 10.0,
+      "std_demand": 10.488088481701515,
+      "online_profit": {
+        "200": 21.0,
+        "500": 22.7,
+        "1000": 23.7,
+        "2000": 24.2
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 23.8,
+        "500": 24.7,
+        "1000": 25.0,
+        "2000": 25.2
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "AJ"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-008",
+      "family": "poisson",
+      "p": 10.0,
+      "leadtime": 1,
+      "mean_demand": 10.0,
+      "std_demand": 3.1622776601683795,
+      "online_profit": {
+        "200": 89.4,
+        "500": 90.3,
+        "1000": 90.8,
+        "2000": 91.0
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 91.1,
+        "500": 91.6,
+        "1000": 91.8,
+        "2000": 91.9
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-BS"
+        ],
+        "500": [
+          "UCB-KM-BS"
+        ],
+        "1000": [
+          "UCB-KM-BS"
+        ],
+        "2000": [
+          "UCB-KM-BS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-009",
+      "family": "poisson",
+      "p": 10.0,
+      "leadtime": 3,
+      "mean_demand": 10.0,
+      "std_demand": 3.1622776601683795,
+      "online_profit": {
+        "200": 86.5,
+        "500": 87.8,
+        "1000": 88.4,
+        "2000": 88.8
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 88.4,
+        "500": 89.5,
+        "1000": 89.9,
+        "2000": 90.1
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-CBS"
+        ],
+        "500": [
+          "UCB-KM-BS"
+        ],
+        "1000": [
+          "UCB-KM-BS"
+        ],
+        "2000": [
+          "UCB-KM-BS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-010",
+      "family": "poisson",
+      "p": 10.0,
+      "leadtime": 5,
+      "mean_demand": 10.0,
+      "std_demand": 3.1622776601683795,
+      "online_profit": {
+        "200": 84.2,
+        "500": 86.3,
+        "1000": 87.2,
+        "2000": 87.9
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 86.6,
+        "500": 88.2,
+        "1000": 88.8,
+        "2000": 89.2
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-CBS"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-011",
+      "family": "poisson",
+      "p": 10.0,
+      "leadtime": 7,
+      "mean_demand": 10.0,
+      "std_demand": 3.1622776601683795,
+      "online_profit": {
+        "200": 82.5,
+        "500": 85.5,
+        "1000": 86.7,
+        "2000": 87.3
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 85.0,
+        "500": 87.3,
+        "1000": 88.2,
+        "2000": 88.6
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-CBS"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-012",
+      "family": "geometric",
+      "p": 10.0,
+      "leadtime": 1,
+      "mean_demand": 10.0,
+      "std_demand": 10.488088481701515,
+      "online_profit": {
+        "200": 69.4,
+        "500": 69.7,
+        "1000": 69.9,
+        "2000": 69.9
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 68.1,
+        "500": 69.0,
+        "1000": 69.6,
+        "2000": 69.9
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-BS"
+        ],
+        "500": [
+          "UCB-KM-BS"
+        ],
+        "1000": [
+          "UCB-KM-BS"
+        ],
+        "2000": [
+          "UCB-KM-BS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-013",
+      "family": "geometric",
+      "p": 10.0,
+      "leadtime": 3,
+      "mean_demand": 10.0,
+      "std_demand": 10.488088481701515,
+      "online_profit": {
+        "200": 64.1,
+        "500": 65.5,
+        "1000": 65.1,
+        "2000": 65.4
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 64.4,
+        "500": 65.6,
+        "1000": 66.2,
+        "2000": 66.6
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-BS"
+        ],
+        "500": null,
+        "1000": [
+          "UCB-KM-BS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-014",
+      "family": "geometric",
+      "p": 10.0,
+      "leadtime": 5,
+      "mean_demand": 10.0,
+      "std_demand": 10.488088481701515,
+      "online_profit": {
+        "200": 61.0,
+        "500": 62.6,
+        "1000": 63.1,
+        "2000": 63.5
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 62.4,
+        "500": 63.8,
+        "1000": 64.6,
+        "2000": 65.0
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-CBS"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    },
+    {
+      "instance_id": "online-015",
+      "family": "geometric",
+      "p": 10.0,
+      "leadtime": 7,
+      "mean_demand": 10.0,
+      "std_demand": 10.488088481701515,
+      "online_profit": {
+        "200": 58.2,
+        "500": 60.3,
+        "1000": 61.2,
+        "2000": 61.9
+      },
+      "paper_gc_lsn_e_profit": {
+        "200": 60.4,
+        "500": 62.4,
+        "1000": 63.4,
+        "2000": 63.9
+      },
+      "online_method_from_lyu": {
+        "200": [
+          "UCB-KM-CBS"
+        ],
+        "500": [
+          "UCB-KM-CBS"
+        ],
+        "1000": [
+          "UCB-KM-CBS"
+        ],
+        "2000": [
+          "UCB-KM-CBS"
+        ]
+      }
+    }
+  ]
+}

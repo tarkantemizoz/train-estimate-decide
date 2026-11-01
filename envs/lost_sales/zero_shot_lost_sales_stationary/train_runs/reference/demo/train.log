@@ -1,0 +1,76 @@
+[gen 1/1]
+plan laptop, generation 0: 1 process(es) x 1 engine(s) x 3 workers x 512 slots; rollout policy in-machine (no trained policy yet: cpu and the blocking binding are unused until generation 1); training on cpu; expects 5 CPUs — derived on <host> (Darwin): 5 performance cores; cpu only — accelerator present but fewer than 6 cores: not worth two engines
+machine: <host> (Darwin; Apple M5 Pro)
+  hardware:   15 logical CPUs / 15 physical cores; 24 GiB RAM
+              5 performance + 10 efficiency cores
+  allocation: 15 logical CPUs / 15 physical cores = whole node; no memory limit found
+  gpu:        mps:0 Apple GPU (Metal)
+  torch:      2.14.0
+  note:       Darwin has no CPU affinity API: allowed CPUs = hardware CPUs
+processes: 3 x 1 engine(s) x 4 workers; p0: cpu, cpus unpinned; p1: cpu, cpus unpinned; p2: cpu, cpus unpinned
+Collecting 100000 samples (generation 0, rollouts by heuristic):
+>>>>>10>>>>>20>>>>>30>>>>>40>>>>>50>>>>>60>>>>>70>>>>>80>>>>>90>>>>>100
+collected 100000 samples in 71.45s (0.71 ms/sample; ~242,340,712 rollout periods/s)
+sample quality: 41% at Z>0.5; 20% at Z>1; 12% at Z>1.5; 7% at Z>2; 5% at Z>2.5; 4% at Z>3
+Training agent_gen1 on samples_gen0 (n=100000, loss=ce):
+epoch    1  train 2.1423 (11%)  val 1.9506 (14%)  est. regret 10.6873  *
+epoch    2  train 1.8834 (15%)  val 1.8394 (15%)  est. regret 10.4371  *
+epoch    3  train 1.8212 (16%)  val 1.8106 (16%)  est. regret 10.2288  *
+epoch    4  train 1.7869 (16%)  val 1.7680 (17%)  est. regret 10.3552  *
+epoch    5  train 1.7616 (17%)  val 1.7396 (17%)  est. regret 10.1145  *
+epoch    6  train 1.7356 (17%)  val 1.7310 (17%)  est. regret 10.1979  *
+epoch    7  train 1.7167 (17%)  val 1.6964 (18%)  est. regret 10.2285  *
+epoch    8  train 1.6936 (18%)  val 1.7032 (18%)  est. regret 10.5215
+epoch    9  train 1.6759 (18%)  val 1.6539 (19%)  est. regret 9.9821  *
+epoch   10  train 1.6571 (19%)  val 1.6519 (19%)  est. regret 9.9333  *
+epoch   11  train 1.6463 (19%)  val 1.6448 (19%)  est. regret 10.0278  *
+epoch   12  train 1.6325 (19%)  val 1.6315 (19%)  est. regret 10.0946  *
+epoch   13  train 1.6201 (19%)  val 1.6244 (19%)  est. regret 10.0082  *
+epoch   14  train 1.6011 (20%)  val 1.5967 (20%)  est. regret 9.8507  *
+epoch   15  train 1.5911 (20%)  val 1.6169 (19%)  est. regret 10.2694
+epoch   16  train 1.5833 (20%)  val 1.6047 (20%)  est. regret 10.0493
+epoch   17  train 1.5687 (20%)  val 1.5925 (20%)  est. regret 9.8153  *
+epoch   18  train 1.5671 (20%)  val 1.5847 (20%)  est. regret 10.0033  *
+epoch   19  train 1.5572 (21%)  val 1.5595 (21%)  est. regret 9.8918  *
+epoch   20  train 1.5510 (21%)  val 1.5549 (21%)  est. regret 9.9911  *
+epoch   21  train 1.5547 (21%)  val 1.5614 (20%)  est. regret 9.9429
+epoch   22  train 1.5300 (21%)  val 1.5807 (20%)  est. regret 10.2387
+epoch   23  train 1.5309 (21%)  val 1.5799 (20%)  est. regret 10.2131
+epoch   24  train 1.5179 (21%)  val 1.5586 (21%)  est. regret 10.3587
+epoch   25  train 1.5113 (22%)  val 1.5642 (20%)  est. regret 9.7647
+epoch   26  train 1.5179 (21%)  val 1.5569 (21%)  est. regret 9.8996
+epoch   27  train 1.5173 (21%)  val 1.5374 (21%)  est. regret 9.9284  *
+epoch   28  train 1.5024 (22%)  val 1.5641 (20%)  est. regret 10.3343
+epoch   29  train 1.4945 (22%)  val 1.5364 (21%)  est. regret 9.9824  *
+epoch   30  train 1.4850 (22%)  val 1.5215 (21%)  est. regret 9.9556  *
+epoch   31  train 1.4881 (22%)  val 1.5259 (21%)  est. regret 9.9504
+epoch   32  train 1.4837 (22%)  val 1.5794 (20%)  est. regret 10.2045
+epoch   33  train 1.4796 (22%)  val 1.5262 (21%)  est. regret 9.8825
+epoch   34  train 1.4768 (22%)  val 1.5237 (21%)  est. regret 10.1775
+epoch   35  train 1.4807 (22%)  val 1.5277 (21%)  est. regret 10.0110
+epoch   36  train 1.4688 (23%)  val 1.5133 (22%)  est. regret 9.9973  *
+epoch   37  train 1.4549 (23%)  val 1.5134 (22%)  est. regret 10.0772
+epoch   38  train 1.4553 (23%)  val 1.5157 (21%)  est. regret 9.9352
+epoch   39  train 1.4580 (23%)  val 1.5367 (21%)  est. regret 9.6725
+epoch   40  train 1.4510 (23%)  val 1.5056 (22%)  est. regret 9.9575  *
+epoch   41  train 1.4529 (23%)  val 1.5317 (21%)  est. regret 9.8790
+epoch   42  train 1.4517 (23%)  val 1.5002 (22%)  est. regret 9.9693  *
+epoch   43  train 1.4420 (23%)  val 1.5341 (21%)  est. regret 9.8642
+epoch   44  train 1.4429 (23%)  val 1.5260 (21%)  est. regret 10.2331
+epoch   45  train 1.4507 (23%)  val 1.5127 (22%)  est. regret 10.0928
+epoch   46  train 1.4376 (23%)  val 1.5540 (21%)  est. regret 9.8374
+epoch   47  train 1.4303 (23%)  val 1.5125 (22%)  est. regret 10.0695
+epoch   48  train 1.4353 (23%)  val 1.5128 (22%)  est. regret 9.7645
+epoch   49  train 1.4266 (24%)  val 1.5058 (22%)  est. regret 9.8614
+epoch   50  train 1.4214 (24%)  val 1.5356 (21%)  est. regret 9.9603
+epoch   51  train 1.4251 (24%)  val 1.5044 (22%)  est. regret 9.8281
+epoch   52  train 1.4198 (24%)  val 1.5058 (22%)  est. regret 9.8955
+epoch   53  train 1.4175 (24%)  val 1.6043 (20%)  est. regret 10.2704
+epoch   54  train 1.4123 (24%)  val 1.5138 (22%)  est. regret 9.9546
+epoch   55  train 1.4156 (24%)  val 1.5401 (21%)  est. regret 10.0112
+epoch   56  train 1.4080 (24%)  val 1.5196 (21%)  est. regret 10.1032
+epoch   57  train 1.4246 (24%)  val 1.5115 (22%)  est. regret 9.9568
+epoch   58  train 1.4066 (24%)  val 1.5265 (21%)  est. regret 9.7337
+early stopping at epoch 58: no validation improvement for 16 epochs (> patience 15; best epoch 42)
+epochs 58/100  train 1.4066 (24%)  best val 1.5002 (22%) @ epoch 42
+saved agent_gen1 -> <repository>/lost_sales_stationary/train_runs/laptop_m5pro/demo/agent_gen1

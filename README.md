@@ -1,29 +1,61 @@
-# TED: Train, Estimate and Decide with DynaPlex
+# Train, then Estimate and Decide (TED) with DynaPlex
 
-This tutorial is in preparation for the workshop.
+This repository accompanies the paper [Zero-shot generalization in inventory management: Train, then Estimate and Decide](https://doi.org/10.1016/j.ejor.2025.12.033) (Temizöz, Imdahl, Dijkman, Lamghari-Idrissi and Van Jaarsveld, *European Journal of Operational Research* 333(1), 2026).
+You will train deep reinforcement learning agents for lost-sales inventory control with [DynaPlex](https://github.com/DynaPlex/DynaPlex), on your laptop, and test them on the paper's instances.
 
-Apply the TED idea from [Zero-shot generalization in inventory management: Train, then Estimate and Decide](https://doi.org/10.1016/j.ejor.2025.12.033) to lost-sales inventory control using Python-based DynaPlex 1.14.0.
-Train one policy across a population of inventory problems, estimate unknown parameters from observations, and use those estimates with the fixed policy to choose orders.
-The network is not retrained during deployment.
+## Why TED?
 
-The live exercise uses stationary demand and known deterministic lead times.
-It trains with **100,000 samples, one policy-improvement generation, M=500, and rollout horizon 21**.
-The original reference configuration trained in approximately five minutes on the preparation laptop (Apple M5 Pro, 15 CPU cores, MPS).
-The current training command delegates execution planning to DynaPlex; that earlier timing does not describe every native plan.
-The reference run exceeded the rounded online-learning benchmark mean in 62 of 64 instance/checkpoint combinations.
-These are measurements of one trained policy; runtime and scores can change with hardware and training randomness.
-See the [experiment protocol](docs/experiments.md) before interpreting comparisons.
+Deep reinforcement learning (DRL) finds strong inventory policies, but it is usually trained for one problem instance: one demand distribution, one lead time, one cost structure.
+In practice, those parameters are not given.
+Demand and lead-time distributions have to be estimated from data, demand observations are censored when stock runs out, and the estimates change as data come in.
+Retraining an agent each time an estimate changes, for each of thousands of items, is too expensive: a single training run can take hours.
 
-## 1. Create your copy
+Online learning methods avoid training altogether: they learn while they operate, often with worst-case guarantees.
+But they tune the parameters of a heuristic, such as a base-stock level, so they can do no better than the best policy of that heuristic class.
 
-On the published GitHub template, select **Use this template > Create a new repository**.
-Download or clone your newly created repository and open a terminal at its root.
-Run all commands below from that directory.
-An organizer preparing the template should first follow [publishing instructions](docs/publishing.md).
+## The idea
 
-## 2. Install
+TED separates learning a policy from learning the parameters:
 
-Use Python 3.13:
+1. **Train** one *generally capable agent* on a *super-MDP*: a whole population of instances, with each instance's parameters as inputs to the network.
+   Training happens once, offline, with Deep Controlled Learning (DCL).
+2. **Estimate** the parameters while operating: censored demand with a Kaplan-Meier-type estimator, lead times from the observed arrivals.
+3. **Decide** by feeding the current state and the latest estimates to the trained network.
+   It is never retrained.
+
+The training cost is paid once and shared by every instance and every update of the estimates.
+The agent applies zero-shot to instances it has never seen, as long as they lie within its training ranges.
+Any estimator can be plugged in, and better estimates immediately give better decisions.
+
+In the paper, the resulting agent GC-LSN outperforms base-stock and capped base-stock policies when the parameters are known.
+With estimated parameters, it outperforms the best of six online learning methods on nearly all of their benchmark instances.
+The generalization has limits: the agent is only as general as its training ranges, and the paper reports weaker performance well outside them.
+
+In this repository, a network trained on a laptop in a few minutes beats the best published online learning method in 62 of 64 instance and horizon combinations.
+[Evaluation](docs/evaluation.md#the-online-comparison) explains what that comparison can and cannot show.
+
+## What is in this repository
+
+| Part | Contents |
+| --- | --- |
+| [`envs/lost_sales/`](envs/lost_sales) | Three lost-sales environments, the paper's instances, and their evaluation |
+| `zero_shot_lost_sales_stationary` | A super-MDP of stationary instances: the workshop environment, trainable on a laptop |
+| `zero_shot_lost_sales_large` | The paper's super-MDP, adding cyclic demand and stochastic lead times with order crossover |
+| `lost_sales` | One instance with known parameters, to train one agent per instance: what TED avoids |
+| [`train.py`](train.py), [`evaluate.py`](evaluate.py) | Train any environment with DCL; evaluate agents against heuristics and published results |
+| [`machines/`](machines) | Slurm scripts for training on the Snellius supercomputer |
+| Shipped networks | `reference/demo`: the laptop network above; `paper/gc_lsn`: the paper's GC-LSN |
+
+Read further in [docs/](docs):
+
+- [Environments](docs/environments.md): the problem, the three environments, the paper's instances, and how to add your own environment.
+- [Training](docs/training.md): installation, configurations, machines and Snellius.
+- [Evaluation](docs/evaluation.md): the protocol, the benchmarks, and how to read the results.
+
+## Quick start
+
+On GitHub, select **Use this template > Create a new repository**, clone your new repository, and open a terminal at its root.
+Install Python 3.13, then:
 
 ```sh
 python3.13 -m venv .venv
@@ -33,64 +65,64 @@ python -m dynaplex.selftest
 ```
 
 On Windows, use `py -3.13 -m venv .venv` and `.venv\Scripts\Activate.ps1` in PowerShell.
-See [training and hardware options](docs/training.md#installation) for CPU and NVIDIA installations.
+On Linux without an NVIDIA GPU, install the CPU build of PyTorch first, as [Training](docs/training.md#installation) shows.
 
-## 3. Check the installation, then train
-
-```sh
-python train.py lost_sales_stationary configs/training/smoke.json
-python train.py lost_sales_stationary configs/training/laptop.json
-```
-
-The smoke run checks two tiny generations; it does not produce a competitive policy.
-Edit only `configs/training/laptop.json` for the laptop experiment.
-Its `dcl.machine` is `"auto"`; DynaPlex chooses execution settings, and omitted options retain native defaults.
-Inspect them with the same training command plus `--dry-run`.
-It saves the trained policy at `runs/tutorial_laptop/agent_gen1`, with logs, samples, configuration, and timings alongside it.
-An unchanged command resumes completed work; use `--output runs/my_experiment` to start a separate run.
-The 25-minute target covers training through a saved policy, excluding installation and evaluation.
-
-## 4. Evaluate the online-learning instances
+Train the workshop network, with 100,000 samples and one generation:
 
 ```sh
-python -m ted_tutorial.evaluate_online --agent runs/tutorial_laptop/agent_gen1 --output runs/tutorial_laptop/online_evaluation
-python -m ted_tutorial.compare_online runs/tutorial_laptop/online_evaluation
+python train.py zero_shot_lost_sales_stationary demo
 ```
 
-This evaluates 16 instances at 200, 500, 1,000, and 2,000 periods, using 1,000 trajectories, censored demand observations, and known deterministic lead times.
-Evaluation chooses process and worker counts from the available CPU allocation.
-Open `runs/tutorial_laptop/online_evaluation/comparison.csv` for the 64 comparisons, or `comparison.json` for the aggregate counts and interpretation notes.
-`summary.csv` reports simulated profits, standard errors, and paired gains over the included greedy heuristic.
-The online-learning algorithms themselves are represented by their published reference means.
+The run is saved in `envs/lost_sales/zero_shot_lost_sales_stationary/train_runs/<machine>/demo/`, where `<machine>` is the machine DynaPlex recognized, such as `laptop`.
+Evaluate it on the 16 online learning instances, with known and with estimated demand:
 
-## Explore further
+```sh
+python evaluate.py zero_shot_lost_sales_stationary --agent laptop/demo
+```
 
-- [Training guide](docs/training.md): configurations, local hardware, larger training runs, and Snellius CPU/MPI/GPU execution.
-- [Experiment guide](docs/experiments.md): known versus estimated parameters, the online protocol, Case 1-3 experiments, and reusable BS/CBS benchmarks.
-- [Publishing guide](docs/publishing.md): organizer steps for making this folder a GitHub template.
+The last line counts how often your network beats the best published online method.
+Use `--agent reference/demo` for the shipped network, or leave out `--agent` to evaluate only the heuristics.
 
-The stationary model covers the online instances and Case 1.
-The larger `zero_shot_lost_sales_inventory_control` model also supports cyclic demand and stochastic lead times for Cases 2 and 3.
-The paper's heavily trained GC-LSN results are separate from the laptop demonstration; no pretrained paper checkpoint is bundled here.
+Then train an agent for a single instance, and compare it with the generally capable networks on that instance:
 
-## Repository contents
+```sh
+python train.py lost_sales demo --instance online-012
+python evaluate.py lost_sales --agent laptop/demo/online-012
+python evaluate.py zero_shot_lost_sales_large --agent paper/gc_lsn --instances online-012 --modes known
+```
 
-| Path | Purpose |
-| --- | --- |
-| `train.py` | Common training command |
-| `configs/` | Training examples, evaluation settings, and published online reference values |
-| `ted_tutorial/` | Training, remote execution, and experiment commands |
-| `lost_sales_stationary/` | Stationary environment and single-instance evaluator |
-| `zero_shot_lost_sales_inventory_control/` | Full environment, case catalogue, and BS/CBS benchmark support |
-| `docs/` | Participant and organizer guides |
-| `tests/`, `.github/` | Small training and experiment checks, including CI |
+## Repository layout
 
-Generated policies, samples, logs, and benchmark caches belong in the ignored `runs/` directory.
+```text
+envs/                                 environments, by problem family
+  lost_sales/
+    cases/                            the paper's instances and the tuned BS and CBS benchmarks
+    evaluate.py                       the evaluation protocol for these environments
+    lost_sales/                       each environment: model.py, policies.py, configs/,
+    zero_shot_lost_sales_large/         train_runs/ (trained agents) and eval_runs/ (results)
+    zero_shot_lost_sales_stationary/
+machines/                             sbatch scripts for Snellius
+docs/                                 environments, training and evaluation guides
+tests/                                checks run by GitHub Actions on Linux, macOS and Windows
+train.py, evaluate.py
+```
 
-To run the included checks:
+Your own runs in `train_runs/` and `eval_runs/` stay out of git; the shipped networks are the exception.
+To run the checks:
 
 ```sh
 python -m pip install -e ".[dev]"
 python -m pytest -q
-python -m ruff check ted_tutorial lost_sales_stationary zero_shot_lost_sales_inventory_control tests train.py
+python -m ruff check .
 ```
+
+## License and citation
+
+The code in this repository is available under the [MIT license](LICENSE).
+DynaPlex is installed separately, under its own license.
+If you use this work, please cite:
+
+> Temizöz, T., Imdahl, C., Dijkman, R., Lamghari-Idrissi, D., & Van Jaarsveld, W. (2026).
+> Zero-shot generalization in inventory management: Train, then Estimate and Decide.
+> *European Journal of Operational Research*, 333(1), 153-173.
+> https://doi.org/10.1016/j.ejor.2025.12.033

@@ -1,2 +1,0 @@
-# Optional; an external MPI runtime is required.
-mpi4py==4.1.0

@@ -5,8 +5,10 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-runs/
 *.pyc
 .DS_Store
-DynaPlex/
 *.local.json
+slurm-*.out
+# Runs stay local; shipped checkpoints are added with git add -f.
+train_runs/
+eval_runs/

@@ -1,0 +1,60 @@
+{
+  "featurizer": "envs.lost_sales.zero_shot_lost_sales_large.model.ZeroShotFeaturizer",
+  "format": "dynaplex-agent-v2",
+  "info": {
+    "conversion_packages": {
+      "dynaplex": "1.14.0",
+      "torch": "2.14.0"
+    },
+    "generation": 5,
+    "legacy_metadata": {
+      "gen": 5,
+      "id": "NN_Policy",
+      "nn_architecture": {
+        "hidden_layers": [
+          256,
+          128,
+          128,
+          128
+        ],
+        "type": "mlp"
+      },
+      "num_inputs": 38,
+      "num_outputs": 130
+    },
+    "legacy_sha256": {
+      "json": "a82d4a48fa2e747fd521cb12ae725203269f421911649a353291bc274543b006",
+      "pth": "c5411ed9559a273b6c8b9882fb2b4d86842493e730bc1addfe1c03d79f7d691c"
+    },
+    "legacy_source": "DynaPlex/IO_DynaPlex/Zero_Shot_Lost_Sales_Inventory_Control/GC-LSN",
+    "model_config": {
+      "max_demand": 12.0,
+      "max_leadtime": 10,
+      "max_num_cycles": 7,
+      "max_p": 100.0,
+      "train_cyclic_demand": true,
+      "train_stochastic_leadtimes": true
+    },
+    "origin": "legacy_NN_Policy"
+  },
+  "network": {
+    "factory": "dynaplex.nn.mlp_factory",
+    "kwargs": {
+      "hidden": [
+        256,
+        128,
+        128,
+        128
+      ]
+    }
+  },
+  "num_actions": 130,
+  "spec": {
+    "v": {
+      "dtype": "float32",
+      "sample_shape": [
+        38
+      ]
+    }
+  }
+}

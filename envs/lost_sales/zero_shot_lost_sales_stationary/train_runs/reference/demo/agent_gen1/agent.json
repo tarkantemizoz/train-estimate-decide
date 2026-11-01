@@ -1,0 +1,43 @@
+{
+  "featurizer": "envs.lost_sales.zero_shot_lost_sales_stationary.model.StationaryFeaturizer",
+  "format": "dynaplex-agent-v2",
+  "info": {
+    "batch_size": 1024,
+    "best_val_loss": 1.5002102851867676,
+    "config_hash": "81c15f1cd3002c89d3e407795799b9de07dc9ad442089563fe257677d0c025a4",
+    "epochs": 100,
+    "epochs_run": 58,
+    "final_loss": 1.4066471758993049,
+    "generation": 1,
+    "loss": "ce",
+    "lr": 0.001,
+    "patience": 15,
+    "seed": 0,
+    "stopped_early": true,
+    "train_device": "cpu",
+    "train_step": "eager",
+    "val_every": 1,
+    "val_fraction": 0.05,
+    "val_regret": 9.733719697625402
+  },
+  "network": {
+    "factory": "dynaplex.nn.mlp_factory",
+    "kwargs": {
+      "hidden": [
+        256,
+        128,
+        128,
+        128
+      ]
+    }
+  },
+  "num_actions": 130,
+  "spec": {
+    "v": {
+      "dtype": "float32",
+      "sample_shape": [
+        14
+      ]
+    }
+  }
+}
