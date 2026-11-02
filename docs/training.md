@@ -27,24 +27,24 @@ python -m pip install -r requirements.txt
 
 ## Training an environment
 
-`train.py` takes an environment and a config, a file in the environment's `configs/` folder:
+`train.py` takes an environment, named after its folder in `envs/`, and a config, a file in the environment's `configs/` folder:
 
 ```sh
-python train.py zero_shot_lost_sales_stationary demo
-python train.py lost_sales demo --instance online-012
-sbatch machines/genoa.sbatch train.py zero_shot_lost_sales_large gc_lsn
+python train.py lost_sales/zero_shot_stationary demo
+python train.py lost_sales/single_instance demo
+sbatch machines/genoa.sbatch train.py lost_sales/zero_shot_large gc_lsn
 ```
 
 | Environment | Configs | What a run produces |
 | --- | --- | --- |
-| `zero_shot_lost_sales_stationary` | `demo`: 100,000 samples, one generation | A network for every stationary instance in the training ranges |
-| `zero_shot_lost_sales_large` | `gc_lsn`: the paper's 5 million samples per generation, five generations | GC-LSN, for every instance of the paper |
-| `lost_sales` | `demo`, with `--instance <ID>` | An agent for that one instance |
+| `zero_shot_stationary` | `demo`: 100,000 samples, one generation | A network for every stationary instance in the training ranges |
+| `zero_shot_large` | `gc_lsn`: the paper's 5 million samples per generation, five generations | GC-LSN, for every instance of the paper |
+| `single_instance` | `demo`: the parameters of `online-012`; `--instance <ID>` for another instance | An agent for that one instance |
 
 Every environment also has a `smoke` config, a few seconds of training that the tests use.
-A config can also be a path: `python train.py zero_shot_lost_sales_stationary my_configs/wide.json`.
+A config can also be a path: `python train.py lost_sales/zero_shot_stationary my_configs/wide.json`.
 
-Measured on an Apple M5 Pro with the default plan, which runs 3 workers there, the `demo` config of `zero_shot_lost_sales_stationary` took 236 seconds, 224 of them to collect the samples, and the single-instance `demo` for `online-012` took 139 seconds.
+Measured on an Apple M5 Pro with the default plan, which runs 3 workers there, the `demo` config of `zero_shot_stationary` took 236 seconds, 224 of them to collect the samples, and the single-instance `demo`, for `online-012`, took 139 seconds.
 With 12 workers, as the shipped `reference/demo` was trained, they took 80 and 45 seconds; see [Machines](#machines).
 `gc_lsn` is 250 times the samples of `demo`, which is why it runs on Snellius.
 
@@ -63,14 +63,15 @@ A config is a JSON file with these sections:
 ```
 
 - `mdp`: the MDP's keyword arguments.
-  For a super-MDP they are the training ranges: the largest penalty, mean demand and lead time an instance can have, and, for `zero_shot_lost_sales_large`, the longest demand cycle and whether lead times can be stochastic and demand cyclic.
+  For a super-MDP they are the training ranges: the largest penalty, mean demand and lead time an instance can have, and, for `zero_shot_large`, the longest demand cycle and whether lead times can be stochastic and demand cyclic.
   The ranges are part of the network: an instance outside them asks it to extrapolate, and `evaluate.py` builds every instance with the ranges of the agent's config.
-  The single-instance `lost_sales` has no `mdp` section; `--instance` defines its model.
+  For `single_instance` they are the parameters of the instance, in the format of the paper's instances in [`envs/lost_sales/cases/`](../envs/lost_sales/cases): `p`, the mean and standard deviation of demand in each period of the cycle, and the lead time or lead-time distribution.
+  `--instance <ID>` replaces them with those of one of the paper's instances, such as `--instance online-003`.
 - `dcl`: the sampling budget of each generation, passed to DynaPlex's DCL.
   `n` decision states are labeled per generation.
   To label a state, DCL takes every admissible order once and then follows the current policy for `h` periods, averaged over up to `m` rollouts, and labels the state with the cheapest order.
   Orders that are clearly worse are dropped after fewer rollouts.
-  Before labeling, each trajectory runs `warmup_time` periods under the current policy, and after `restart_after` labels it restarts from a fresh instance.
+  Before labeling, each trajectory runs `warmup_time` periods under the current policy, and after `restart_after` labels, the paper's `R`, it restarts: in a super-MDP, with a newly drawn instance.
 - `network`: the hidden layers of the multilayer perceptron.
 - `train`: fitting the network to the labels with cross-entropy: at most `epochs` passes, stopping early once the validation loss has not improved for more than `patience` epochs.
 - `generations`: generation 0 rolls out the environment's `BasePolicy`, a greedy capped base-stock policy; each later generation rolls out the previous network.
@@ -80,7 +81,7 @@ The [DynaPlex DCL guide](https://github.com/DynaPlex/DynaPlex/blob/main/docs/tra
 
 ## Runs and resuming
 
-A run is saved in `envs/<family>/<environment>/train_runs/<machine>/<config>/`, and a single-instance run in `.../<config>/<instance>/`:
+A run is saved in `envs/<family>/<environment>/train_runs/<machine>/<config>/`, or in `<config>-<instance>/` with `--instance`:
 
 ```text
 agent_gen1/, agent_gen2/, ...   the trained networks: weights.pt and agent.json
@@ -121,7 +122,7 @@ To use 12 workers, as for the reference network, create `machines/laptop_m5pro.l
 ```
 
 ```sh
-python train.py zero_shot_lost_sales_stationary demo --machine machines/laptop_m5pro.local.json
+python train.py lost_sales/zero_shot_stationary demo --machine machines/laptop_m5pro.local.json
 ```
 
 The run folder takes the file's name without `.json` and `.local`: `laptop_m5pro`.
@@ -141,9 +142,9 @@ python -m venv .venv && .venv/bin/pip install torch==2.14.0 --index-url https://
 Then submit any repository command with one of the two batch scripts:
 
 ```sh
-sbatch machines/genoa.sbatch train.py zero_shot_lost_sales_large gc_lsn
-sbatch machines/gpu.sbatch train.py zero_shot_lost_sales_large gc_lsn
-sbatch machines/genoa.sbatch evaluate.py zero_shot_lost_sales_large --agent genoa/gc_lsn
+sbatch machines/genoa.sbatch train.py lost_sales/zero_shot_large gc_lsn
+sbatch machines/gpu.sbatch train.py lost_sales/zero_shot_large gc_lsn
+sbatch machines/genoa.sbatch evaluate.py lost_sales/zero_shot_large --agent genoa/gc_lsn
 ```
 
 `genoa.sbatch` requests a whole 192-core Genoa node and `gpu.sbatch` a quarter H100 node: one GPU and 16 cores.

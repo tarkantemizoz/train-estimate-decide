@@ -3,7 +3,8 @@
     python -m envs.lost_sales.cases.tune --cases case2 case3
 
 Parameters are stored in benchmark_parameters.csv; evaluate.py reads them and tunes a missing instance on first use.
-The policies run on zero_shot_lost_sales_large with the paper's dimensions, which represents every case instance.
+The policies run on zero_shot_large with the paper's dimensions, which represent every case instance; an instance
+of your own that lies outside them gets wider ones.
 The search is the legacy first-nonimprovement procedure, so it does not certify a global optimum.
 """
 
@@ -16,10 +17,10 @@ from dynaplex.modelling import DiscreteDist
 
 import envs
 
-from ..zero_shot_lost_sales_large.model import DIMENSIONS, ZeroShotLostSalesMDP, instance_config
-from ..zero_shot_lost_sales_large.policies import BaseStockPolicy, CappedBaseStockPolicy
+from ..distributions import fit_aer
+from ..zero_shot_large.model import DIMENSIONS, ZeroShotLostSalesMDP, instance_config
+from ..zero_shot_large.policies import BaseStockPolicy, CappedBaseStockPolicy
 from . import CASES
-from .instance import fit_aer
 
 TABLE = Path(__file__).with_name("benchmark_parameters.csv")
 FIELDS = ("instance", "base_stock_level", "capped_base_stock_level", "cap")
@@ -91,9 +92,25 @@ def search(assess_bs, assess_cbs, max_action: int, max_inventory: int, max_cap: 
     return {"base_stock_level": best_bs, "capped_base_stock_level": best_level, "cap": best_cap}
 
 
+def dimensions(instance) -> dict:
+    """The paper's dimensions, widened to hold an instance outside them; every case instance lies within."""
+    parameters = instance.parameters
+    probs = parameters.get("leadtime_distribution")
+    longest = max(i for i, prob in enumerate(probs) if prob > 0) if probs else parameters["leadtime"]
+    return DIMENSIONS | {
+        "max_p": max(DIMENSIONS["max_p"], parameters["p"]),
+        # The dimensions bound demand by a fit with twice max_demand as its standard deviation.
+        "max_demand": max(
+            DIMENSIONS["max_demand"], *parameters["mean_demand"], *(s / 2 for s in parameters["std_demand"])
+        ),
+        "max_leadtime": max(DIMENSIONS["max_leadtime"], longest),
+        "max_num_cycles": max(DIMENSIONS["max_num_cycles"], len(parameters["mean_demand"])),
+    }
+
+
 def oracle_config(instance, mode: str) -> dict:
-    """The zero_shot_lost_sales_large model of the instance, allowing the benchmarks' unclipped orders."""
-    return instance_config(instance, mode, DIMENSIONS) | {"action_mode": "legacy_oracle"}
+    """The zero_shot_large model of the instance, allowing the benchmarks' unclipped orders."""
+    return instance_config(instance, mode, dimensions(instance)) | {"action_mode": "legacy_oracle"}
 
 
 def tune(instance) -> dict:
@@ -111,32 +128,32 @@ def tune(instance) -> dict:
         )
 
 
-def table() -> dict[str, dict]:
-    if not TABLE.exists():
+def table(path: Path = TABLE) -> dict[str, dict]:
+    if not path.exists():
         return {}
-    with TABLE.open(newline="") as stream:
+    with path.open(newline="") as stream:
         return {
             row.pop("instance"): {key: int(value) for key, value in row.items()}
             for row in csv.DictReader(stream)
         }
 
 
-def parameters(instance) -> dict:
-    """The stored parameters of an instance; tuned and stored first if missing."""
-    known = table()
+def parameters(instance, path: Path = TABLE) -> dict:
+    """The parameters of an instance stored in the table at path; tuned and stored first if missing."""
+    known = table(path)
     if instance.id not in known:
         print(f"Tuning BS and CBS for {instance.id}", flush=True)
         known[instance.id] = tune(instance)
-        with TABLE.open("w", newline="") as stream:
+        with path.open("w", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=FIELDS, lineterminator="\n")
             writer.writeheader()
             writer.writerows({"instance": key} | known[key] for key in sorted(known))
     return known[instance.id]
 
 
-def benchmarks(instance, mode: str):
+def benchmarks(instance, mode: str, path: Path = TABLE):
     """BS and CBS for evaluate.py, tuned with known parameters and then run in the given mode."""
-    rule = parameters(instance)
+    rule = parameters(instance, path)
     model = ZeroShotLostSalesMDP(**oracle_config(instance, mode))
     return model, {
         "BS": BaseStockPolicy(model, rule["base_stock_level"]),

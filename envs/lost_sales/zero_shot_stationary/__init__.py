@@ -1,6 +1,6 @@
 """Stationary lost-sales super-MDP: the TED workshop environment.
 
-    python train.py zero_shot_lost_sales_stationary demo
+    python train.py lost_sales/zero_shot_stationary demo
 
 train.py and evaluate.py use the names below.
 """
@@ -15,6 +15,8 @@ from .policies import SweepingGreedyCappedBaseStockPolicy as SweepingBasePolicy
 CASES = ("case1", "online")
 DEFAULT_CASES = ("online",)
 MODES = ("known", "demand")
+# An agent applies to every instance within the training ranges of its config.
+SUPER_MDP = True
 # Model dimensions when evaluating heuristics without a trained network: the model defaults.
 DIMENSIONS = {}
 
@@ -24,6 +26,7 @@ __all__ = [
     "DIMENSIONS",
     "MDP",
     "MODES",
+    "SUPER_MDP",
     "BasePolicy",
     "SweepingBasePolicy",
     "Featurizer",

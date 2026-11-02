@@ -6,11 +6,11 @@ This guide runs evaluations, explains what they compare and how, and how to read
 ## Running an evaluation
 
 ```sh
-python evaluate.py zero_shot_lost_sales_stationary --agent laptop/demo
-python evaluate.py zero_shot_lost_sales_stationary --agent reference/demo --cases case1 --modes known
-python evaluate.py zero_shot_lost_sales_large --agent paper/gc_lsn --instances case3-000 case3-120
-python evaluate.py lost_sales --agent laptop/demo/online-012
-python evaluate.py zero_shot_lost_sales_stationary
+python evaluate.py lost_sales/zero_shot_stationary --agent laptop/demo
+python evaluate.py lost_sales/zero_shot_stationary --agent reference/demo --cases case1 --modes known
+python evaluate.py lost_sales/zero_shot_large --agent paper/gc_lsn --instances case3-000 case3-120
+python evaluate.py lost_sales/single_instance --agent laptop/demo
+python evaluate.py lost_sales/zero_shot_stationary
 ```
 
 The last command evaluates only the heuristics.
@@ -19,7 +19,7 @@ The first, the paper's protocol on the 16 online instances, took 9 minutes on an
 | Option | Meaning | Default |
 | --- | --- | --- |
 | `--agent` | A run in the environment's `train_runs/`, whose last generation is used, an `agent_gen<g>` folder in it, or a path | None: heuristics only |
-| `--cases` | `case1`, `case2`, `case3`, `online` | `online`; all four for `zero_shot_lost_sales_large`; a `lost_sales` agent's own instance |
+| `--cases` | `case1`, `case2`, `case3`, `online` | `online`; all four for `zero_shot_large`; a `single_instance` agent's own instance |
 | `--instances` | Instance IDs such as `case1-000 online-003` | All instances of the cases |
 | `--modes` | `known`, `demand`, `leadtime`, `both` | Every mode an instance is evaluated in that the environment simulates |
 | `--trajectories` | Simulated trajectories per policy | 1000 |
@@ -29,6 +29,8 @@ The first, the paper's protocol on the 16 online instances, took 9 minutes on an
 | `--output` | The results folder | Derived from `--agent` |
 
 An environment evaluates the cases its model can represent: the stationary environment cannot run Case 2 or Case 3.
+A `single_instance` agent is evaluated on the instance in its config only.
+That is one of the paper's instances when the parameters match one exactly, and otherwise an instance named `custom`, with its results in `custom.csv`.
 The defaults are the paper's protocol.
 
 ## What is compared
@@ -47,13 +49,14 @@ In an estimated mode they therefore know what the network and the online methods
 Their orders are also not capped by the newsvendor bound that limits greedy and the network.
 
 The tuned levels are in [`benchmark_parameters.csv`](../envs/lost_sales/cases/benchmark_parameters.csv); `evaluate.py` tunes and stores a missing instance on first use, and `python -m envs.lost_sales.cases.tune --cases case2` tunes a whole case.
+The levels of a `custom` instance are tuned the same way, and stored in a `benchmark_parameters.csv` next to its results.
 The tuning simulates 1000 trajectories of 5000 periods after 100 periods of warm-up, on a seed other than the evaluation's.
 It raises the base-stock level until the cost stops improving, and for CBS, at each level from the BS level up, it raises the cap until the cost stops improving: the legacy search, kept as in the paper.
 Stopping at the first cap that does not improve can miss a better one.
 On `case3-160`, the cost dips slightly near a cap of 10 before falling further, so the stored CBS costs about 0.15 per period, 0.4%, more than the best level and cap within the search's range, and more than BS.
 Trying every cap on 46 instances, the 16 online ones and 10 random ones from each other case, found the stored CBS the best on all of them, so such gaps are rare, but a small margin over CBS can still partly reflect the search.
 
-BS and CBS run on `zero_shot_lost_sales_large`, whichever environment is evaluated, because it represents every instance.
+BS and CBS run on `zero_shot_large`, whichever environment is evaluated, because it represents every instance: with the paper's dimensions, widened for a `custom` instance outside them.
 
 ## The protocol
 
@@ -107,7 +110,7 @@ Read the count with these limits in mind:
 
 ## Reference results
 
-`python evaluate.py zero_shot_lost_sales_stationary --agent reference/demo` evaluates the shipped laptop network on the 16 online instances.
+`python evaluate.py lost_sales/zero_shot_stationary --agent reference/demo` evaluates the shipped laptop network on the 16 online instances.
 Averaged over the instances, with known parameters, cost per period, lower is better:
 
 | greedy | trained | BS | CBS |
@@ -143,8 +146,8 @@ On a single instance, the agents can be compared with the instance-specific one,
 | greedy | 30.127 | +0.932 |
 | BS | 29.461 | +0.267 |
 | CBS | 29.194 | |
-| `lost_sales` agent, 2 minutes of training on this instance | 29.081 | -0.113 |
-| `zero_shot_lost_sales_stationary` reference network | 29.120 | -0.074 |
+| `single_instance` agent, 2 minutes of training on this instance | 29.081 | -0.113 |
+| `zero_shot_stationary` reference network | 29.120 | -0.074 |
 | GC-LSN | 29.054 | -0.140 |
 
 All three networks are cheaper than CBS on the same trajectories.
@@ -154,7 +157,7 @@ These gaps are several times their standard errors, but each network comes from 
 ## Running long evaluations
 
 The full paper protocol over all cases is long: 819 instances, up to four modes, and four horizons in each estimated mode.
-Evaluate on Snellius with `sbatch machines/genoa.sbatch evaluate.py zero_shot_lost_sales_large --agent paper/gc_lsn`, and restrict local runs with `--cases`, `--instances`, `--modes` or fewer `--trajectories`.
+Evaluate on Snellius with `sbatch machines/genoa.sbatch evaluate.py lost_sales/zero_shot_large --agent paper/gc_lsn`, and restrict local runs with `--cases`, `--instances`, `--modes` or fewer `--trajectories`.
 
 An evaluation uses a few hundred MiB whatever its size.
 In DynaPlex 1.14 that takes two measures, because the models allocate in every trajectory's initial state and, with estimated parameters, every period, and DynaPlex neither counts that garbage towards its sweeps nor frees a heuristic's garbage within a trajectory.

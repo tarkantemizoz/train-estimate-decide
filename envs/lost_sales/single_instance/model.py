@@ -2,7 +2,7 @@
 
 Demand is stationary or cyclic, and lead times fixed or stochastic, with or without order crossover.
 A DCL agent trained on this model applies to its own instance only.
-With the same seed it simulates exactly like zero_shot_lost_sales_large on the instance with known parameters,
+With the same seed it simulates exactly like zero_shot_large on the instance with known parameters,
 including its crossover arrivals: one random number per age in transit, not per unit as in legacy.
 """
 
@@ -25,8 +25,7 @@ from dynaplex.modelling import (
 )
 
 from ..cases import find
-from ..cases.instance import fit_aer
-from ..crossover import arriving_units
+from ..distributions import arriving_units, fit_aer
 
 
 @dataclass(slots=True)
@@ -193,7 +192,7 @@ class LostSalesMDP:
 
     def modify_state_with_event(self, state: State, context: LostSalesContext) -> None:
         demand = self.demand[state.period].sample(context.rng)
-        # Every arrival draw comes before any arrival, as in zero_shot_lost_sales_large: with crossover,
+        # Every arrival draw comes before any arrival, as in zero_shot_large: with crossover,
         # one per age that can arrive early, however many units it holds, and without, one in total.
         # Nothing is allocated per period: DynaPlex 1.14 does not count an empty list towards
         # garbage collection, so an empty list per period was never freed during DCL collection.

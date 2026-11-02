@@ -1,0 +1,59 @@
+{
+  "mdp": {
+    "p": 9.0,
+    "demand_cycles": [
+      0,
+      1,
+      2
+    ],
+    "mean_demand": [
+      8.0,
+      10.0,
+      6.0
+    ],
+    "std_demand": [
+      2.8284271247461903,
+      10.488088481701515,
+      4.242640687119285
+    ],
+    "stochastic_leadtime": true,
+    "order_crossover": true,
+    "leadtime_distribution": [
+      0.05,
+      0.05,
+      0.1,
+      0.1,
+      0.15,
+      0.25,
+      0.3,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "dcl": {
+    "n": 128,
+    "m": 8,
+    "h": 5,
+    "warmup_time": 5,
+    "restart_after": 8,
+    "seed": 0
+  },
+  "network": {
+    "hidden": [
+      256,
+      128,
+      128,
+      128
+    ]
+  },
+  "train": {
+    "epochs": 2,
+    "batch_size": 32,
+    "lr": 0.001,
+    "patience": 15,
+    "val_every": 1
+  },
+  "generations": 2
+}

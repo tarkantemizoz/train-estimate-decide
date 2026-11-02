@@ -1,4 +1,17 @@
 {
+  "mdp": {
+    "p": 10.0,
+    "demand_cycles": [
+      0
+    ],
+    "mean_demand": [
+      10.0
+    ],
+    "std_demand": [
+      10.488088481701515
+    ],
+    "leadtime": 1
+  },
   "dcl": {
     "n": 100000,
     "m": 500,

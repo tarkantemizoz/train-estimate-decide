@@ -1,6 +1,6 @@
 """Cyclic lost-sales super-MDP with stochastic lead times: the paper's GC-LSN environment.
 
-    python train.py zero_shot_lost_sales_large gc_lsn
+    python train.py lost_sales/zero_shot_large gc_lsn
 
 train.py and evaluate.py use the names below.
 """
@@ -15,6 +15,8 @@ from .policies import SweepingGreedyCappedBaseStockPolicy as SweepingBasePolicy
 CASES = ("case1", "case2", "case3", "online")
 DEFAULT_CASES = CASES
 MODES = ("known", "demand", "leadtime", "both")
+# An agent applies to every instance within the training ranges of its config.
+SUPER_MDP = True
 
 __all__ = [
     "CASES",
@@ -22,6 +24,7 @@ __all__ = [
     "DIMENSIONS",
     "MDP",
     "MODES",
+    "SUPER_MDP",
     "BasePolicy",
     "SweepingBasePolicy",
     "Featurizer",

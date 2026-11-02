@@ -39,9 +39,9 @@ In this repository, a network trained on a laptop in a few minutes beats the bes
 | Part | Contents |
 | --- | --- |
 | [`envs/lost_sales/`](envs/lost_sales) | Three lost-sales environments, the paper's instances, and their evaluation |
-| `zero_shot_lost_sales_stationary` | A super-MDP of stationary instances: the workshop environment, trainable on a laptop |
-| `zero_shot_lost_sales_large` | The paper's super-MDP, adding cyclic demand and stochastic lead times with order crossover |
-| `lost_sales` | One instance with known parameters, to train one agent per instance: what TED avoids |
+| `zero_shot_stationary` | A super-MDP of stationary instances: the workshop environment, trainable on a laptop |
+| `zero_shot_large` | The paper's super-MDP, adding cyclic demand and stochastic lead times with order crossover |
+| `single_instance` | One instance with known parameters, to train one agent per instance: what TED avoids |
 | [`train.py`](train.py), [`evaluate.py`](evaluate.py) | Train any environment with DCL; evaluate agents against heuristics and published results |
 | [`machines/`](machines) | Slurm scripts for training on the Snellius supercomputer |
 | Shipped networks | `reference/demo`: the laptop network above; `paper/gc_lsn`: the paper's GC-LSN |
@@ -70,26 +70,28 @@ On Linux without an NVIDIA GPU, install the CPU build of PyTorch first, as [Trai
 Train the workshop network, with 100,000 samples and one generation:
 
 ```sh
-python train.py zero_shot_lost_sales_stationary demo
+python train.py lost_sales/zero_shot_stationary demo
 ```
 
-The run is saved in `envs/lost_sales/zero_shot_lost_sales_stationary/train_runs/<machine>/demo/`, where `<machine>` is the machine DynaPlex recognized, such as `laptop`.
+The run is saved in `envs/lost_sales/zero_shot_stationary/train_runs/<machine>/demo/`, where `<machine>` is the machine DynaPlex recognized, such as `laptop`.
 Evaluate it on the 16 online learning instances, with known and with estimated demand:
 
 ```sh
-python evaluate.py zero_shot_lost_sales_stationary --agent laptop/demo
+python evaluate.py lost_sales/zero_shot_stationary --agent laptop/demo
 ```
 
 The last line counts how often your network beats the best published online method.
 Use `--agent reference/demo` for the shipped network, or leave out `--agent` to evaluate only the heuristics.
 
-Then train an agent for a single instance, and compare it with the generally capable networks on that instance:
+Then train an agent for a single instance, `online-012`, whose parameters the single-instance `demo` config holds, and compare it with the generally capable networks on that instance:
 
 ```sh
-python train.py lost_sales demo --instance online-012
-python evaluate.py lost_sales --agent laptop/demo/online-012
-python evaluate.py zero_shot_lost_sales_large --agent paper/gc_lsn --instances online-012 --modes known
+python train.py lost_sales/single_instance demo
+python evaluate.py lost_sales/single_instance --agent laptop/demo
+python evaluate.py lost_sales/zero_shot_large --agent paper/gc_lsn --instances online-012 --modes known
 ```
+
+With `--instance online-003`, the first command trains on another of the paper's instances instead, in the run `laptop/demo-online-003`.
 
 ## Repository layout
 
@@ -97,10 +99,11 @@ python evaluate.py zero_shot_lost_sales_large --agent paper/gc_lsn --instances o
 envs/                                 environments, by problem family
   lost_sales/
     cases/                            the paper's instances and the tuned BS and CBS benchmarks
+    distributions.py                  the demand and arrival distributions the models share
     evaluate.py                       the evaluation protocol for these environments
-    lost_sales/                       each environment: model.py, policies.py, configs/,
-    zero_shot_lost_sales_large/         train_runs/ (trained agents) and eval_runs/ (results)
-    zero_shot_lost_sales_stationary/
+    single_instance/                  each environment: model.py, policies.py, configs/,
+    zero_shot_large/                    train_runs/ (trained agents) and eval_runs/ (results)
+    zero_shot_stationary/
 machines/                             sbatch scripts for Snellius
 docs/                                 environments, training and evaluation guides
 tests/                                checks run by GitHub Actions on Linux, macOS and Windows

@@ -1,5 +1,5 @@
 {
-  "featurizer": "envs.lost_sales.zero_shot_lost_sales_stationary.model.StationaryFeaturizer",
+  "featurizer": "envs.lost_sales.zero_shot_stationary.model.StationaryFeaturizer",
   "format": "dynaplex-agent-v2",
   "info": {
     "batch_size": 1024,

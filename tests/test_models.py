@@ -3,14 +3,14 @@ import sys
 
 import dynaplex as dp
 import pytest
-from conftest import ENVIRONMENTS, SINGLE_INSTANCE, peak_mib
+from conftest import ENVIRONMENTS, peak_mib
 
 from envs.lost_sales import cases
-from envs.lost_sales import lost_sales as single
-from envs.lost_sales import zero_shot_lost_sales_large as zero_shot
-from envs.lost_sales import zero_shot_lost_sales_stationary as stationary
-from envs.lost_sales.cases.tune import benchmarks, table
-from envs.lost_sales.crossover import arriving_units
+from envs.lost_sales import single_instance as single
+from envs.lost_sales import zero_shot_large as zero_shot
+from envs.lost_sales import zero_shot_stationary as stationary
+from envs.lost_sales.cases.tune import benchmarks, dimensions, table
+from envs.lost_sales.distributions import arriving_units
 
 
 def comparer(model, warmup: int = 100) -> dp.PolicyComparer:
@@ -37,8 +37,10 @@ def test_the_environments_cover_their_cases_and_modes():
         stationary.instance_config(cases.find("case2-000"), "known", {})
 
 
-def test_every_instance_has_tuned_benchmarks():
-    assert {item.id for case in cases.CASES.values() for item in case()} <= set(table())
+def test_every_instance_has_benchmarks_tuned_with_the_paper_dimensions():
+    instances = [item for case in cases.CASES.values() for item in case()]
+    assert {item.id for item in instances} <= set(table())
+    assert all(dimensions(item) == zero_shot.DIMENSIONS for item in instances)
 
 
 # Shared instances must be the same problem in every model, so that comparisons across them are paired.
@@ -90,7 +92,7 @@ def test_the_stationary_model_simulates_like_the_zero_shot_model(instance_id, mo
 @pytest.mark.parametrize("environment", ENVIRONMENTS)
 def test_collection_memory_does_not_grow_with_the_samples(environment):
     small, large = (
-        peak_mib("tests/collect.py", environment, samples, SINGLE_INSTANCE) for samples in (40, 240)
+        peak_mib("tests/collect.py", environment, samples) for samples in (40, 240)
     )
     assert large - small < 64, (small, large)
 

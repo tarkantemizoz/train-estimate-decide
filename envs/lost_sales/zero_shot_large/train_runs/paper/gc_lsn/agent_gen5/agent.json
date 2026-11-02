@@ -1,5 +1,5 @@
 {
-  "featurizer": "envs.lost_sales.zero_shot_lost_sales_large.model.ZeroShotFeaturizer",
+  "featurizer": "envs.lost_sales.zero_shot_large.model.ZeroShotFeaturizer",
   "format": "dynaplex-agent-v2",
   "info": {
     "conversion_packages": {

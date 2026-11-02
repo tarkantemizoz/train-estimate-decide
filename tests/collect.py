@@ -1,23 +1,23 @@
 """Run a small generation-0 DCL collection, for the memory test in tests/test_models.py.
 
-    python tests/peak_memory.py tests/collect.py <environment> <samples> <instance>
+    python tests/peak_memory.py tests/collect.py <environment> <samples>
 
-The instance applies to the single-instance environment; the super-MDPs use the paper's dimensions.
+The MDP is that of the environment's smoke config.
 """
 
+import json
 import sys
 import tempfile
+from pathlib import Path
 
 import dynaplex as dp
 
 import envs
 
-name, samples, instance = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+name, samples = sys.argv[1], int(sys.argv[2])
 environment = envs.find(name)
-if name == "lost_sales":
-    mdp = environment.MDP(**environment.mdp_config(instance))
-else:
-    mdp = environment.MDP(max_p=100.0, max_demand=12.0, max_leadtime=10)
+config = json.loads((Path(environment.__file__).parent / "configs" / "smoke.json").read_text())
+mdp = environment.MDP(**config["mdp"])
 with tempfile.TemporaryDirectory() as workdir:
     dcl = dp.DCL(
         mdp,

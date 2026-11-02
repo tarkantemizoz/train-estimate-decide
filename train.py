@@ -1,12 +1,14 @@
 """Train a policy with DynaPlex's deep controlled learning (DCL), for any environment in envs/.
 
-    python train.py zero_shot_lost_sales_stationary demo
-    python train.py lost_sales demo --instance online-003
+    python train.py lost_sales/zero_shot_stationary demo
+    python train.py lost_sales/single_instance demo --instance online-003
 
 DynaPlex recognizes the machine: a laptop, or a Snellius Genoa node or H100 unit requested with machines/*.sbatch.
 Outside Slurm, a Linux machine DynaPlex does not recognize uses its laptop plan, derived from this machine.
-The run is saved in <environment>/train_runs/<machine>/<config>/, with one agent_gen<g> folder per generation.
-A config without "mdp" trains on one instance, chosen with --instance, in <config>/<instance>/.
+The run is saved in envs/<environment>/train_runs/<machine>/<config>/, one agent_gen<g> folder per generation.
+The config's "mdp" section holds the keyword arguments of the MDP: the training ranges of a super-MDP,
+or the parameters of a single instance. --instance replaces them with those of a named instance, for an
+environment that exports mdp_config(instance_id), and saves the run in <config>-<instance>/.
 Running the same command again resumes it; DynaPlex refuses to reuse the folder for a changed experiment.
 """
 
@@ -69,7 +71,7 @@ def main() -> None:
         "or a JSON file of your own settings, see docs/training.md",
     )
     parser.add_argument(
-        "--instance", help="an instance ID such as online-003, for a single-instance environment"
+        "--instance", help="train on this instance, such as online-003, instead of the config's"
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="show DynaPlex's execution plan without training"
@@ -88,21 +90,17 @@ def main() -> None:
         except (dp.machine.MachineMismatchError, ValueError) as error:
             parser.error(str(error))
         machine = {"machine": machine_name}
-    # A super-MDP config defines its model; a single-instance environment builds it from --instance.
-    if "mdp" in config:
-        if args.instance:
-            parser.error(
-                f"{args.environment} trains one network for many instances; --instance does not apply"
-            )
-        mdp = environment.MDP(**config["mdp"])
-    else:
-        if not args.instance:
-            parser.error(f"{args.environment} trains one agent per instance; choose it with --instance")
+    if "mdp" not in config:
+        parser.error(f'{args.config} has no "mdp" section with the keyword arguments of the MDP')
+    if args.instance:
+        if not hasattr(environment, "mdp_config"):
+            parser.error(f"{args.environment} has no named instances; --instance does not apply")
         try:
-            mdp = environment.MDP(**environment.mdp_config(args.instance))
+            config = config | {"mdp": environment.mdp_config(args.instance)}
         except KeyError as error:
             parser.error(error.args[0])
-        config_name, config = f"{config_name}/{args.instance}", config | {"instance": args.instance}
+        config_name = f"{config_name}-{args.instance}"
+    mdp = environment.MDP(**config["mdp"])
     options = config["dcl"] | {
         key: dp.Shape(**value) if key in ("gen0", "trained") else value for key, value in machine.items()
     }

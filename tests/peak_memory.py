@@ -1,7 +1,7 @@
 """Run a Python script as if from the repository root, and print its peak memory (MiB) last.
 
-    python tests/peak_memory.py evaluate.py zero_shot_lost_sales_stationary --modes demand
-    python tests/peak_memory.py tests/collect.py lost_sales 40 case3-195
+    python tests/peak_memory.py evaluate.py lost_sales/zero_shot_stationary --modes demand
+    python tests/peak_memory.py tests/collect.py lost_sales/single_instance 40
 
 The memory tests compare a small and a large run, so that memory growing with the run shows.
 """

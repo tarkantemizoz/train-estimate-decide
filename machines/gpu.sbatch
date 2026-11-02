@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run a repository command on a quarter Snellius H100 node (1 GPU, 16 cores), from the repository root:
-#   sbatch machines/gpu.sbatch train.py zero_shot_lost_sales_large gc_lsn
+#   sbatch machines/gpu.sbatch train.py lost_sales/zero_shot_large gc_lsn
 # Uses the same .venv as machines/genoa.sbatch; its CUDA build of PyTorch also runs on CPU-only nodes.
 #SBATCH --job-name=dynaplex
 #SBATCH --partition=gpu_h100

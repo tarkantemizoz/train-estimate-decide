@@ -1,6 +1,6 @@
 """DynaML port of the legacy cyclic, stochastic-lead-time lost-sales super-MDP.
 
-Unlike legacy, crossover arrivals take one random number per age in transit, not per unit (see crossover.py),
+Unlike legacy, crossover arrivals take one random number per age in transit, not per unit (see distributions.py),
 so that every policy draws the same numbers whatever it orders.
 """
 
@@ -24,8 +24,7 @@ from dynaplex.modelling import (
     trajectory_context,
 )
 
-from ..cases.instance import fit_aer
-from ..crossover import arriving_units
+from ..distributions import arriving_units, fit_aer
 
 
 @dataclass(slots=True)

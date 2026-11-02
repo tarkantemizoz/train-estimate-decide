@@ -1,7 +1,7 @@
 """Environments, grouped by problem family: envs/<family>/<environment>/.
 
 An environment is a package with a configs/ folder that exports MDP, Featurizer and BasePolicy.
-train.py and evaluate.py find it by its name, which is unique across families.
+train.py and evaluate.py name it by its folder, <family>/<environment>, such as lost_sales/zero_shot_stationary.
 """
 
 import contextlib
@@ -40,13 +40,12 @@ def sweeping_at_safe_points():
 
 
 def names(family: str = "*") -> list[str]:
-    """The environments of a family, or of all families."""
-    return sorted(path.parent.name for path in FOLDER.glob(f"{family}/*/configs"))
+    """The environments of a family, or of all families, as <family>/<environment>."""
+    return sorted(path.parent.relative_to(FOLDER).as_posix() for path in FOLDER.glob(f"{family}/*/configs"))
 
 
 def find(name: str) -> ModuleType:
-    """The environment package with this name."""
-    folders = [path.parent for path in FOLDER.glob(f"*/{name}/configs")]
-    if len(folders) != 1:
+    """The environment package named <family>/<environment>."""
+    if name not in names():
         raise KeyError(f"unknown environment {name!r}; choose from {', '.join(names())}")
-    return import_module(f"{__name__}.{folders[0].parent.name}.{name}")
+    return import_module(f"{__name__}.{name.replace('/', '.')}")

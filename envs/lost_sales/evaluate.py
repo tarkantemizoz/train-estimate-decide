@@ -1,10 +1,12 @@
 """Evaluate heuristics, and optionally a trained agent, on the lost-sales cases; run it with the root evaluate.py:
 
-    python evaluate.py zero_shot_lost_sales_stationary --agent reference/demo --cases online --modes demand
-    python evaluate.py zero_shot_lost_sales_large --agent paper/gc_lsn --cases case1
-    python evaluate.py lost_sales --agent laptop/demo/online-003
+    python evaluate.py lost_sales/zero_shot_stationary --agent reference/demo --cases online --modes demand
+    python evaluate.py lost_sales/zero_shot_large --agent paper/gc_lsn --cases case1
+    python evaluate.py lost_sales/single_instance --agent laptop/demo
 
 --agent is a run in <environment>/train_runs, whose last generation is used, an agent_gen<g> folder, or a path.
+A single-instance agent is evaluated on the instance in its config: a case instance, or else one named "custom",
+whose BS and CBS are tuned on first use and stored with the results.
 Every evaluation includes the greedy policy DCL starts from and the tuned BS and CBS benchmarks.
 Modes: "known" parameters, or estimated from observations: "demand", "leadtime" or "both" (Case 3).
 With known parameters a policy is scored over KNOWN_HORIZON periods after WARMUP periods.
@@ -27,9 +29,11 @@ import envs
 
 from . import cases
 from .cases.online import published_scores
-from .cases.tune import benchmarks
+from .cases.tune import TABLE, benchmarks
 
 MODES = ("known", "demand", "leadtime", "both")
+# A single-instance agent's instance when it is not a case instance.
+CUSTOM = "custom"
 # The paper's evaluation protocol; the command-line options override it.
 TRAJECTORIES = 1000
 KNOWN_HORIZON = 5000
@@ -124,7 +128,7 @@ def window_rows(results: dict) -> list[dict]:
     return rows
 
 
-def evaluate_case(environment, instances, modes, agent, dimensions: dict, args, path: Path) -> None:
+def evaluate_case(environment, instances, modes, agent, dimensions: dict, table: Path, args, path: Path) -> None:
     done = set()
     if path.exists():
         with path.open(newline="") as stream:
@@ -150,8 +154,8 @@ def evaluate_case(environment, instances, modes, agent, dimensions: dict, args, 
                 model = environment.MDP(**environment.instance_config(instance, mode, dimensions))
                 greedy = environment.SweepingBasePolicy(model)
                 policies = {"greedy": greedy} | ({"trained": agent} if agent else {})
-                # BS and CBS run on zero_shot_lost_sales_large, which draws the same demand for the same seed.
-                oracle, rules = benchmarks(instance, mode)
+                # BS and CBS run on zero_shot_large, which draws the same demand for the same seed.
+                oracle, rules = benchmarks(instance, mode, table)
                 for horizon, warmup in windows:
                     results = assess(model, policies, horizon, warmup, args)
                     results |= assess(oracle, rules, horizon, warmup, args)
@@ -244,36 +248,44 @@ def main() -> None:
         if not (path.parent / "config.json").exists():
             parser.error(f"{path.parent} has no config.json; train.py writes one next to the agents")
         trained = json.loads((path.parent / "config.json").read_text())
+        if "mdp" not in trained:
+            parser.error(f'{path.parent / "config.json"} has no "mdp" section; retrain with train.py')
         agent = dp.NNAgent.load(str(path))
-    # A single-instance agent applies to its own instance only.
-    only = trained.get("instance")
-    if only and args.instances and set(args.instances) != {only}:
-        parser.error(f"the agent was trained for {only} only")
-    ids = args.instances or ([only] if only else None)
-    names = args.cases or (
-        sorted({cases.case_of(i) for i in ids}) if ids else list(environment.DEFAULT_CASES)
-    )
-    if unknown := set(names) - set(cases.CASES):
-        parser.error(f"unknown cases {sorted(unknown)}; choose from {sorted(cases.CASES)}")
-    if unsupported := set(names) - set(environment.CASES):
-        parser.error(
-            f"{args.environment} cannot represent {sorted(unsupported)}; it covers {environment.CASES}"
-        )
     if unsupported := set(args.modes or ()) - set(environment.MODES):
         parser.error(f"{args.environment} simulates modes {environment.MODES}, not {sorted(unsupported)}")
     modes = [mode for mode in environment.MODES if not args.modes or mode in args.modes]
-    selected = {
-        case: [
-            item
-            for item in cases.CASES[case]()
-            if (not ids or item.id in ids) and set(item.modes) & set(modes)
-        ]
-        for case in names
-    }
-    if missing := set(ids or ()) - {item.id for items in selected.values() for item in items}:
-        parser.error(f"not in the selected cases and modes: {sorted(missing)}")
-    if not any(selected.values()):
-        parser.error(f"no selected instance is evaluated in modes {modes}")
+    if agent and not environment.SUPER_MDP:
+        # A single-instance agent applies to the instance in its config only.
+        own = cases.with_parameters(trained["mdp"]) or cases.Instance(CUSTOM, trained["mdp"], ("known",))
+        if (args.cases and cases.case_of(own.id) not in args.cases) or (
+            args.instances and set(args.instances) != {own.id}
+        ):
+            parser.error(f"the agent was trained for {own.id} only")
+        selected = {cases.case_of(own.id): [own]}
+    else:
+        own = None
+        ids = args.instances
+        names = args.cases or (
+            sorted({cases.case_of(i) for i in ids}) if ids else list(environment.DEFAULT_CASES)
+        )
+        if unknown := set(names) - set(cases.CASES):
+            parser.error(f"unknown cases {sorted(unknown)}; choose from {sorted(cases.CASES)}")
+        if unsupported := set(names) - set(environment.CASES):
+            parser.error(
+                f"{args.environment} cannot represent {sorted(unsupported)}; it covers {environment.CASES}"
+            )
+        selected = {
+            case: [
+                item
+                for item in cases.CASES[case]()
+                if (not ids or item.id in ids) and set(item.modes) & set(modes)
+            ]
+            for case in names
+        }
+        if missing := set(ids or ()) - {item.id for items in selected.values() for item in items}:
+            parser.error(f"not in the selected cases and modes: {sorted(missing)}")
+        if not any(selected.values()):
+            parser.error(f"no selected instance is evaluated in modes {modes}")
 
     try:
         output = args.output or output_folder(folder, path)
@@ -298,10 +310,14 @@ def main() -> None:
                 f"{results} has the columns of an older evaluate.py; choose another folder with --output"
             )
     record.write_text(json.dumps(settings, indent=2) + "\n")
-    dimensions = trained.get("mdp", environment.DIMENSIONS)
+    dimensions = trained["mdp"] if agent else environment.DIMENSIONS
+    # The BS and CBS levels of a custom instance are stored with its results.
+    table = output / "benchmark_parameters.csv" if own and own.id == CUSTOM else TABLE
     for case, instances in selected.items():
         if instances:
-            evaluate_case(environment, instances, modes, agent, dimensions, args, output / f"{case}.csv")
+            evaluate_case(
+                environment, instances, modes, agent, dimensions, table, args, output / f"{case}.csv"
+            )
             summarize(output / f"{case}.csv")
 
 

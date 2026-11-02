@@ -27,4 +27,9 @@ def find(instance_id: str) -> Instance:
     raise KeyError(f"unknown instance {instance_id!r}; IDs look like case1-000 or online-003")
 
 
-__all__ = ["CASES", "Instance", "case_of", "find"]
+def with_parameters(parameters: dict) -> Instance | None:
+    """The case instance with exactly these parameters, if there is one."""
+    return next((item for make in CASES.values() for item in make() if item.parameters == parameters), None)
+
+
+__all__ = ["CASES", "Instance", "case_of", "find", "with_parameters"]

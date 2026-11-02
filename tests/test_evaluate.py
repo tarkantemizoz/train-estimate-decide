@@ -1,8 +1,11 @@
 import csv
+import json
 import sys
 
 import pytest
-from conftest import SINGLE_INSTANCE, command, peak_mib
+from conftest import ENVS, SINGLE_INSTANCE, command, peak_mib
+
+from envs.lost_sales.cases.tune import table
 
 TINY = ("--trajectories", "4", "--horizons", "200", "--known-horizon", "50", "--warmup", "5")
 
@@ -15,9 +18,9 @@ def rows(path):
 def test_online_evaluation_counts_wins_and_resumes(smoke_agents, tmp_path):
     arguments = (
         "evaluate.py",
-        "zero_shot_lost_sales_stationary",
+        "lost_sales/zero_shot_stationary",
         "--agent",
-        smoke_agents["zero_shot_lost_sales_stationary"],
+        smoke_agents["lost_sales/zero_shot_stationary"],
         "--modes",
         "demand",
         *TINY,
@@ -32,7 +35,7 @@ def test_online_evaluation_counts_wins_and_resumes(smoke_agents, tmp_path):
 
 
 def test_modes_heuristics_and_the_shipped_networks(tmp_path):
-    stationary = ("evaluate.py", "zero_shot_lost_sales_stationary", *TINY)
+    stationary = ("evaluate.py", "lost_sales/zero_shot_stationary", *TINY)
     command(*stationary, "--instances", "case1-000", "--modes", "known", "--output", tmp_path / "h")
     heuristics = rows(tmp_path / "h" / "case1.csv")
     assert {row["policy"] for row in heuristics} == {"greedy", "BS", "CBS"}
@@ -41,7 +44,7 @@ def test_modes_heuristics_and_the_shipped_networks(tmp_path):
     online = rows(tmp_path / "s" / "online.csv")
     assert {row["policy"] for row in online} == {"greedy", "trained", "BS", "CBS"}
     assert {row["mode"] for row in online} == {"known", "demand"}
-    zero_shot = ("evaluate.py", "zero_shot_lost_sales_large", "--agent", "paper/gc_lsn", *TINY)
+    zero_shot = ("evaluate.py", "lost_sales/zero_shot_large", "--agent", "paper/gc_lsn", *TINY)
     command(*zero_shot, "--instances", "case1-000", "case3-000", "--output", tmp_path / "z")
     case3 = rows(tmp_path / "z" / "case3.csv")
     assert {row["mode"] for row in case3} == {"known", "demand", "leadtime", "both"}
@@ -51,7 +54,7 @@ def test_modes_heuristics_and_the_shipped_networks(tmp_path):
 
 # BS and CBS run on another model than greedy, but on the same random numbers, also with order crossover.
 def test_differences_with_cbs_are_paired_per_trajectory(tmp_path):
-    arguments = ("evaluate.py", "zero_shot_lost_sales_large", "--instances", "case3-000", "case3-120")
+    arguments = ("evaluate.py", "lost_sales/zero_shot_large", "--instances", "case3-000", "case3-120")
     command(
         *arguments, "--modes", "known", "--trajectories", "32", "--known-horizon", "500", "--output", tmp_path
     )
@@ -68,23 +71,43 @@ def test_differences_with_cbs_are_paired_per_trajectory(tmp_path):
     assert old.returncode != 0 and "older evaluate.py" in old.stderr
 
 
-def test_a_single_instance_agent_is_evaluated_on_its_instance(smoke_agents, tmp_path):
-    run = smoke_agents["lost_sales"].parent
-    arguments = ("evaluate.py", "lost_sales", "--agent", run, *TINY)
-    command(*arguments, "--output", tmp_path)
-    results = rows(tmp_path / "case3.csv")
+def test_a_single_instance_agent_is_evaluated_on_the_instance_of_its_config(machine, smoke_agents, tmp_path):
+    environment = "lost_sales/single_instance"
+    arguments = ("evaluate.py", environment, "--agent", smoke_agents[environment].parent, *TINY)
+    command(*arguments, "--output", tmp_path / "smoke")
+    results = rows(tmp_path / "smoke" / "case3.csv")
     assert {row["instance"] for row in results} == {SINGLE_INSTANCE}
     assert {row["mode"] for row in results} == {"known"}
     assert {row["policy"] for row in results} == {"greedy", "trained", "BS", "CBS"}
     other = command(*arguments, "--instances", "case1-000", "--output", tmp_path / "x", check=False)
     assert other.returncode != 0 and f"trained for {SINGLE_INSTANCE} only" in other.stderr
+    # --instance trains on a case instance instead of the config's, in a run of its own.
+    command("train.py", environment, "smoke", "--machine", machine, "--instance", "online-012")
+    run = ENVS / environment / "train_runs" / machine.stem / "smoke-online-012"
+    command("evaluate.py", environment, "--agent", run, *TINY, "--output", tmp_path / "online")
+    assert {row["instance"] for row in rows(tmp_path / "online" / "online.csv")} == {"online-012"}
+
+
+# An instance of your own, here with a lead time beyond the paper's dimensions, gets BS and CBS tuned for it.
+def test_an_agent_for_an_instance_of_your_own_is_compared_with_benchmarks_tuned_for_it(machine, tmp_path):
+    environment = "lost_sales/single_instance"
+    config = json.loads((ENVS / environment / "configs" / "smoke.json").read_text())
+    config["mdp"] = {"p": 4.0, "demand_cycles": [0], "mean_demand": [2.0], "std_demand": [1.5], "leadtime": 11}
+    (tmp_path / "own.json").write_text(json.dumps(config))
+    command("train.py", environment, tmp_path / "own.json", "--machine", machine)
+    run = ENVS / environment / "train_runs" / machine.stem / "own"
+    command("evaluate.py", environment, "--agent", run, *TINY, "--output", tmp_path / "own")
+    results = rows(tmp_path / "own" / "custom.csv")
+    assert {row["instance"] for row in results} == {"custom"}
+    assert {row["policy"] for row in results} == {"greedy", "trained", "BS", "CBS"}
+    assert set(table(tmp_path / "own" / "benchmark_parameters.csv")) == {"custom"}
 
 
 # DynaPlex 1.14 does not count the garbage of the estimated modes' per-period allocations towards its sweeps,
 # and frees a heuristic's garbage only between trajectories: memory grew with the trajectories, past 10 GiB
 # for the paper's protocol, and with the horizon, to 4.4 GiB for one window of BS and CBS on a laptop.
 @pytest.mark.skipif(sys.platform == "win32", reason="peak memory is read with the POSIX resource module")
-@pytest.mark.parametrize("environment", ["zero_shot_lost_sales_stationary", "zero_shot_lost_sales_large"])
+@pytest.mark.parametrize("environment", ["lost_sales/zero_shot_stationary", "lost_sales/zero_shot_large"])
 def test_evaluation_memory_does_not_grow_with_the_trajectories_or_the_horizon(environment, tmp_path):
     # Geometric demand and lead time 7: the largest per-period allocations of the online instances.
     # Without the sweeps the large run grows to about 1 GiB, so a failing test stays harmless.
