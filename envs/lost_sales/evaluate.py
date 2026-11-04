@@ -12,6 +12,8 @@ Modes: "known" parameters, or estimated from observations: "demand", "leadtime" 
 With known parameters a policy is scored over KNOWN_HORIZON periods after WARMUP periods.
 With estimated parameters it starts cold and is scored over the first T periods, for each T in HORIZONS.
 Every policy is also compared with CBS on the same trajectories: the paired difference and its standard error.
+As each window finishes, a line says whether the trained policy, or greedy without --agent, is better than the best
+published online method, where there is one, and else than CBS, or too close to call.
 Results go to <environment>/eval_runs/<run>/gen<g>/<case>.csv, or to eval_runs/benchmarks without --agent.
 Repeating an interrupted command resumes it.
 """
@@ -32,6 +34,8 @@ from .cases.online import published_scores
 from .cases.tune import TABLE, benchmarks
 
 MODES = ("known", "demand", "leadtime", "both")
+# The modes scored by the negative profit instead of the cost.
+PROFIT_MODES = ("demand", "both")
 # A single-instance agent's instance when it is not a case instance.
 CUSTOM = "custom"
 # The paper's evaluation protocol; the command-line options override it.
@@ -40,6 +44,10 @@ KNOWN_HORIZON = 5000
 WARMUP = 100
 HORIZONS = (200, 500, 1000, 2000)
 SEED = 13021984
+# The two-sided 95% quantile of the normal distribution.
+Z95 = 1.96
+# The published online scores are rounded to 0.1.
+ROUNDING = 0.05
 FIELDS = (
     "instance",
     "mode",
@@ -52,6 +60,11 @@ FIELDS = (
     "delta_cbs_error",
     "true_cost",
 )
+
+
+def side(difference: float, margin: float) -> int:
+    """1 if difference ± margin lies above zero, -1 if below, and 0 if it contains zero."""
+    return (difference - margin > 0) - (difference + margin < 0)
 
 
 def find_agent(folder: Path, name: str) -> Path:
@@ -128,7 +141,40 @@ def window_rows(results: dict) -> list[dict]:
     return rows
 
 
-def evaluate_case(environment, instances, modes, agent, dimensions: dict, table: Path, args, path: Path) -> None:
+def window_line(
+    instance: str, mode: str, horizon: int, rows: list[dict], policy: str, published: dict
+) -> str:
+    """Whether the policy beats the best published online method in a window, where there is one, and else CBS.
+
+    It reports profit with estimated demand, as the online learning literature does, and cost otherwise.
+    """
+    profit = mode in PROFIT_MODES
+    sign = -1 if profit else 1
+    row = next(row for row in rows if row["policy"] == policy)
+    score = sign * row["mean"]
+    reference = published.get(instance, {}).get(str(horizon)) if mode == "demand" else None
+    if reference is not None:
+        half_width = Z95 * row["error"]
+        outcome = side(score - reference, half_width + ROUNDING)
+        comparison = f"{score:.2f} ± {half_width:.2f} vs best online {reference:.1f}"
+        rival = "best online"
+    else:
+        cbs = next(row for row in rows if row["policy"] == "CBS")
+        half_width = Z95 * row["delta_cbs_error"]
+        outcome = -side(row["delta_cbs"], half_width)
+        comparison = (
+            f"{score:.3f} vs CBS {sign * cbs['mean']:.3f}, "
+            f"difference {sign * row['delta_cbs']:+.3f} ± {half_width:.3f}"
+        )
+        rival = "CBS"
+    verdict = {1: f"{policy} better", -1: f"{rival} better", 0: "too close to call"}[outcome]
+    unit = "profit" if profit else "cost"
+    return f"{instance:<10} {mode:<8} T={horizon:<5} {unit:<6} {policy} {comparison}: {verdict}"
+
+
+def evaluate_case(
+    environment, instances, modes, agent, dimensions: dict, table: Path, args, path: Path
+) -> None:
     done = set()
     if path.exists():
         with path.open(newline="") as stream:
@@ -137,6 +183,8 @@ def evaluate_case(environment, instances, modes, agent, dimensions: dict, table:
         writer = csv.DictWriter(stream, fieldnames=FIELDS, lineterminator="\n")
         if stream.tell() == 0:
             writer.writeheader()
+        policy = "trained" if agent else "greedy"
+        published = published_scores()
         for instance in instances:
             for mode in [mode for mode in instance.modes if mode in modes]:
                 windows = (
@@ -160,9 +208,10 @@ def evaluate_case(environment, instances, modes, agent, dimensions: dict, table:
                     results = assess(model, policies, horizon, warmup, args)
                     results |= assess(oracle, rules, horizon, warmup, args)
                     window = {"instance": instance.id, "mode": mode, "horizon": horizon, "warmup": warmup}
-                    writer.writerows(window | row for row in window_rows(results))
+                    rows = window_rows(results)
+                    writer.writerows(window | row for row in rows)
                     stream.flush()
-                print(f"{instance.id} {mode}: " + ", ".join(f"T={h}" for h, _ in windows), flush=True)
+                    print(window_line(instance.id, mode, horizon, rows, policy, published), flush=True)
 
 
 def summarize(path: Path) -> None:
@@ -183,10 +232,9 @@ def summarize(path: Path) -> None:
         mean = sum(float(row["mean"]) for row in group) / len(group)
         line = f"  {mode:<8} {horizon:<6} {policy:<8} {mean:>10.3f}"
         if policy != "CBS":
-            deltas = [(float(row["delta_cbs"]), float(row["delta_cbs_error"])) for row in group]
-            better = sum(delta + 1.96 * error < 0 for delta, error in deltas)
-            worse = sum(delta - 1.96 * error > 0 for delta, error in deltas)
-            line += f" {sum(delta for delta, _ in deltas) / len(deltas):>+9.3f} {better:>7} {worse:>6}"
+            deltas = [float(row["delta_cbs"]) for row in group]
+            sides = [side(float(row["delta_cbs"]), Z95 * float(row["delta_cbs_error"])) for row in group]
+            line += f" {sum(deltas) / len(deltas):>+9.3f} {sides.count(-1):>7} {sides.count(1):>6}"
         else:
             line += f" {'':>9} {'':>7} {'':>6}"
         print(f"{line} {len(group):>4}")
@@ -201,12 +249,12 @@ def summarize(path: Path) -> None:
         and row["horizon"] in reference[row["instance"]]
     ]
     if trained:
-        # The published scores are rounded to 0.1, without standard errors.
-        wins = sum(-float(row["mean"]) > reference[row["instance"]][row["horizon"]] for row in trained)
+        # The published scores are rounded, without standard errors.
+        margins = [-float(row["mean"]) - reference[row["instance"]][row["horizon"]] for row in trained]
+        wins = sum(margin > 0 for margin in margins)
         robust = sum(
-            -float(row["mean"]) - 1.96 * float(row["error"])
-            > reference[row["instance"]][row["horizon"]] + 0.05
-            for row in trained
+            side(margin, Z95 * float(row["error"]) + ROUNDING) == 1
+            for margin, row in zip(margins, trained, strict=True)
         )
         print(
             f"The trained network beats the best published online method in {wins} of {len(trained)} windows, "

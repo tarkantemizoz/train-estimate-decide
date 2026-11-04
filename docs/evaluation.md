@@ -92,6 +92,20 @@ Results go to `<environment>/eval_runs/<run>/gen<g>/<case>.csv`, or to `eval_run
 Repeating an interrupted command resumes it, skipping the windows already in the file.
 `evaluate.py` refuses to add results with other settings, or to a file with other columns, from an older `evaluate.py`; choose another folder with `--output`.
 
+As each window finishes, `evaluate.py` prints whether the trained policy, or greedy without `--agent`, is better:
+
+```text
+online-012 known    T=5000  cost   trained 29.120 vs CBS 29.194, difference -0.074 ± 0.006: trained better
+online-012 demand   T=200   profit trained 68.61 ± 0.37 vs best online 69.4: best online better
+online-012 demand   T=500   profit trained 69.69 ± 0.24 vs best online 69.7: too close to call
+```
+
+With estimated demand on an online instance, the line compares the policy's profit with the best published online method, and the ± is the 95% confidence interval of that profit.
+Otherwise it compares the policy with CBS on the same trajectories, in cost, or in profit with estimated demand, and the ± is the 95% confidence interval of their paired difference.
+One is better only when that interval excludes a tie, after widening it by 0.05 for the rounding of a published score; otherwise the line says `too close to call`.
+Each line is a separate test: where the two perform the same, up to one window in 20 still shows a winner by chance.
+The shipped laptop network gives the lines above.
+
 After each case, `evaluate.py` prints, for each mode, horizon and policy, the mean score over the instances, and against CBS the mean difference and two counts: the instances where the policy is better, and where it is worse, with the 95% confidence interval of the difference entirely below or above zero.
 Each count tests every instance separately: among 16 instances where two policies perform the same, about one may still count by chance.
 For the online case, it also counts the horizons at which the network's profit beats the best published online method, and how many of those wins hold with the network's 95% lower bound against the rounded published score.

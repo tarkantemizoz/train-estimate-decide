@@ -91,9 +91,7 @@ def test_the_stationary_model_simulates_like_the_zero_shot_model(instance_id, mo
 @pytest.mark.skipif(sys.platform == "win32", reason="peak memory is read with the POSIX resource module")
 @pytest.mark.parametrize("environment", ENVIRONMENTS)
 def test_collection_memory_does_not_grow_with_the_samples(environment):
-    small, large = (
-        peak_mib("tests/collect.py", environment, samples) for samples in (40, 240)
-    )
+    small, large = (peak_mib("tests/collect.py", environment, samples) for samples in (40, 240))
     assert large - small < 64, (small, large)
 
 

@@ -80,6 +80,7 @@ Evaluate it on the 16 online learning instances, with known and with estimated d
 python evaluate.py lost_sales/zero_shot_stationary --agent laptop/demo
 ```
 
+As each instance and horizon finishes, a line says whether your network beats the best published online method, or, with known demand, CBS.
 The last line counts how often your network beats the best published online method.
 Use `--agent reference/demo` for the shipped network, or leave out `--agent` to evaluate only the heuristics.
 

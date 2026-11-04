@@ -57,7 +57,9 @@ def test_a_config_without_an_mdp_section_is_refused(machine, tmp_path):
     config = json.loads((ENVS / environment / "configs" / "smoke.json").read_text())
     del config["mdp"]
     (tmp_path / "bare.json").write_text(json.dumps(config))
-    result = command("train.py", environment, tmp_path / "bare.json", "--machine", machine, "--dry-run", check=False)
+    result = command(
+        "train.py", environment, tmp_path / "bare.json", "--machine", machine, "--dry-run", check=False
+    )
     assert result.returncode != 0 and 'no "mdp" section' in result.stderr
 
 
