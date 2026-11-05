@@ -48,7 +48,7 @@ In this repository, a network trained on a laptop in a few minutes beats the bes
 
 Read further in [docs/](docs):
 
-- [Environments](docs/environments.md): the problem, the three environments, the paper's instances, and how to add your own environment.
+- [Environments](docs/environments.md): the problem, the three environments, the paper's instances, how to turn an MDP into a super-MDP, and how to add your own environment.
 - [Training](docs/training.md): installation, configurations, machines and Snellius.
 - [Evaluation](docs/evaluation.md): the protocol, the benchmarks, and how to read the results.
 

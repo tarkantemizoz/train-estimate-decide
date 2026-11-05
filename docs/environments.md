@@ -1,6 +1,6 @@
 # Environments
 
-This guide describes the inventory problem, the three environments that model it, the instances they are evaluated on, and how to add an environment of your own.
+This guide describes the inventory problem, the three environments that model it, the instances they are evaluated on, how to turn an MDP into a super-MDP, and how to add an environment of your own.
 [Training](training.md) and [Evaluation](evaluation.md) cover the commands.
 
 ## The problem
@@ -31,10 +31,11 @@ Deep controlled learning (DCL) normally trains one network for one instance.
 A *super-MDP* draws an instance at the start of every trajectory and keeps its parameters in the state.
 The network receives the parameters as inputs, next to the inventory state, so one network learns to act on every instance in the training ranges.
 This is the *Train* step of TED: the network is trained once, on the true parameters of many sampled instances.
-The 100,000 samples of the `demo` config, for example, come from thousands of trajectories, each with its own instance.
+The 100,000 samples of the `demo` config, for example, come from at least 1,000 trajectories, each with its own instance.
 
 DCL itself does not change.
 What makes the agent generally capable is the MDP, which draws the instance in `get_initial_state`, and the config's `restart_after`, the paper's `R`: the number of samples after which a trajectory restarts with a newly drawn instance.
+[Turning an MDP into a super-MDP](#turning-an-mdp-into-a-super-mdp) lists what the MDP needs.
 A config's `mdp` section therefore holds the training ranges of a super-MDP, and the parameters of a single instance.
 
 In operation the true parameters are unknown.
@@ -151,6 +152,51 @@ The tests check that the benchmarks now see the same demand, and that one draw g
 - `zero_shot_large/train_runs/paper/gc_lsn/`: the paper's GC-LSN, converted from the legacy C++ DynaPlex checkpoint.
   It was not trained with this repository; the `gc_lsn` config reproduces its training protocol.
 
+## Turning an MDP into a super-MDP
+
+DCL trains a generally capable agent with the same command as an agent for one instance: `python train.py <family>/<environment> <config>`.
+What differs is the MDP.
+Compare [`single_instance/model.py`](../envs/lost_sales/single_instance/model.py), an MDP of one instance, with [`zero_shot_stationary/model.py`](../envs/lost_sales/zero_shot_stationary/model.py), a super-MDP of the same problem:
+
+| | One instance | Super-MDP |
+| --- | --- | --- |
+| The config's `mdp` section | The instance's parameters | The training ranges, such as `max_p` |
+| The parameters | Attributes of the MDP, such as `self.p` | Fields of the `State`, such as `state.p` |
+| `get_initial_state` | An empty pipeline | Draws an instance, then an empty pipeline |
+| Network inputs | The pipeline | The pipeline and the parameters |
+| Actions | Up to the instance's own cap | Up to the cap of the most extreme instance in the ranges, masked per state |
+| One fixed instance | Always | With `evaluate=True` and its parameters, for evaluation |
+| Estimated parameters | No | The estimates take the place of the parameters in the state |
+
+A super-MDP needs:
+
+1. **The parameters in the state.**
+   Whatever varies between instances moves from the MDP to the `State`, and the transitions and costs read it from there: `state.p * lost` instead of `self.p * lost`.
+   The MDP keeps what every instance shares, such as the holding cost `h` and the training ranges.
+2. **An instance drawn in `get_initial_state`**, with `context.rng`, so that a run is reproducible from its seed.
+   How to draw is a modelling choice: the agent learns where it is sampled, so a corner of the ranges that is rarely drawn is also rarely learned.
+   `zero_shot_stationary` draws each parameter uniformly, as listed [above](#zero_shot_stationary).
+3. **The parameters as network inputs.**
+   `StationaryFeaturizer` writes `p`, the pipeline, the lead time, and the mean and standard deviation of demand.
+   Without them, the network cannot tell the instances apart and learns one compromise policy for all of them.
+4. **The same shapes for every instance.**
+   The network has one input size and one output size, so the ranges set both, not the instance drawn.
+   The pipeline has `max_leadtime` positions whatever the lead time, and with the configs' ranges there are 130 actions, enough for the most extreme instance.
+   `write_action_validity` masks the orders above `state.order_constraint`, which keeps each instance to its own orders.
+5. **A base policy that works on every instance.**
+   Generation 0 rolls it out on every instance drawn, so it reads the parameters from the state, as the greedy policy does with `state.order_constraint`.
+6. **A mode for one fixed instance, for evaluation.**
+   With `evaluate=True` and an instance's parameters, the same class simulates that instance, with the training ranges as its dimensions, so that the network's inputs and outputs keep their sizes.
+   `instance_config` builds this model for a case instance, and `evaluate.py` passes it the ranges of the agent's config.
+   With `censored_demand=True`, the model starts from a constant demand at the top of the ranges, re-estimates the distribution from each period's sales, and writes the estimated mean and standard deviation into the state where the true ones were: the *Estimate* step.
+   The featurizer then feeds the estimates to the same network: the *Decide* step, without retraining.
+7. **A config with ranges and `restart_after`.**
+   The `mdp` section holds the ranges, the constructor's keyword arguments.
+   `restart_after`, the paper's `R`, is the number of samples a trajectory contributes before it restarts with a newly drawn instance.
+   A smaller `R` spreads the same `n` samples over more instances, with fewer samples from each.
+   With `n` = 100,000 and `R` = 100, the `demo` config draws at least 1,000 instances; `gc_lsn`, with 5 million samples per generation, at least 50,000 per generation.
+8. **`SUPER_MDP = True`** in the package's `__init__.py`, so that the lost-sales `evaluate.py` applies the agent to every selected instance, not only to the instance in its config.
+
 ## Adding your own environment
 
 An environment is a package `envs/<family>/<name>/`, where `<family>` groups environments of one problem.
@@ -163,6 +209,7 @@ For training, its `__init__.py` exports:
 - optionally `mdp_config(instance_id)`, which returns the MDP's keyword arguments for a named instance, for `--instance`.
 
 Its `configs/` folder holds the training settings, each with an `"mdp"` section of the MDP's keyword arguments; see [Training](training.md).
+For a generally capable agent, the MDP is a super-MDP; see [Turning an MDP into a super-MDP](#turning-an-mdp-into-a-super-mdp).
 
 For evaluation, the family has its own `evaluate.py` with a `main()`, which the root `evaluate.py` calls.
 A new lost-sales environment can reuse [`envs/lost_sales/evaluate.py`](../envs/lost_sales/evaluate.py) by also exporting `CASES`, `DEFAULT_CASES`, `MODES`, `SUPER_MDP`, `DIMENSIONS`, `instance_config(instance, mode, dimensions)` and `SweepingBasePolicy`, as the three environments here do.
